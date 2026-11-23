@@ -17,3 +17,14 @@
 - [taste-skill](https://github.com/Leonxlnx/taste-skill/tree/6c0b5c78f5d31776e2210305abaa210cdc0030bf/skills/taste-skill), MIT. Комплект демонстрационных изображений, эффектов и инструментов проверки маркетинговых страниц находится в этой ревизии источника. Для рабочего приложения применяем проверки состояния, размеров и действий из [DESIGN.md](../DESIGN.md).
 - [Superpowers](https://github.com/obra/superpowers/tree/22f0b463e7a5e579904dd6211a520321035526f7/skills), MIT. Сохранены рабочие инструкции и их локальные материалы.
 - [Scientific Critical Thinking](https://github.com/K-Dense-AI/scientific-agent-skills/tree/c21d13b3cc2894680229ba9959a53281acb9200e/skills/scientific-critical-thinking), MIT. Для сравнения вариантов приложения достаточно инструкции и справочника.
+
+## Для пилота общей книги и интерфейсных текстов
+
+| Скилл | Применение |
+| --- | --- |
+| [Premortem](upstream/premortem/SKILL.md) | [Исходник Дональда Фредерика](https://github.com/neurofoo/agent-skills/tree/0e7ac2aa4d094352a082ebeedf1dbb4c52b77782/premortem), MIT. Риски общей книги перед пилотом |
+| [UX-copy](upstream/redaktura-skills/ux-copy/SKILL.md) | [Людмила Сарычева и Никита Архипов](https://github.com/N1arko/redaktura-skills/tree/d1ebaff4fb8b97f939826a1cac284c10303be6f1/ux-copy), CC BY 4.0. Взяты инструкции и справочник тональности |
+| [XLSX](upstream/anthropic-xlsx/SKILL.md) | [Anthropic](https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/xlsx), Apache-2.0. Для сверки черновика таблицы с показателями Автобанка |
+| [Разбор пилота Автобанка](project/avtobank-review-pilot/SKILL.md) | Проектная инструкция по рискам, прогону на вымышленных данных и приёмке по результатам |
+
+[Отбор скиллов из материалов «сбежавшей нейросети»](../docs/escaped-ai-skills.md)
