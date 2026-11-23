@@ -13,7 +13,7 @@ import { parsePartList, PartPlan, preparePhotos, WorkHistory } from "./car-prep"
 import { downloadBuyerReport } from "./car-report";
 import { PlatePhoto } from "./plate-photo";
 import { ContractForm } from "./contract-form";
-import { ActionQueue, FinanceStrip, StageLabel, VehicleRegistry } from "./workbench";
+import { ActionQueue, FinanceStrip, StageBoard, StageLabel, VehicleRegistry } from "./workbench";
 import type { CarFilter, RegistryMode } from "./workbench";
 import { DesktopInspector, useWideInspector, VehicleCover, VehicleTimeline } from "./vehicle-workspace";
 import { formatRussianPlate, normalizePlate, plateKey } from "../lib/license-plate";
@@ -283,6 +283,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
   }
 
   return <div className={"shell workbench-shell" + (wideInspector && selectedCar ? " inspection-open" : "")}>
+    <a className="skip-to-workspace" href="#workspace-main">К рабочей области</a>
     <aside className="sidebar">
       <button className="brand" onClick={() => changeView("cars")} aria-label="Автобанк, главная">
         <span className="brand-icon"><CarFront size={22} strokeWidth={2}/></span>
@@ -301,7 +302,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
       </div>
     </aside>
 
-    <main className="main workspace-main">
+    <main className="main workspace-main" id="workspace-main" tabIndex={-1}>
       <header className="topbar workspace-topbar">
         <div className="workspace-heading">
           <h1>{sectionNames[view]}</h1>
@@ -322,6 +323,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
           : view === "cars" ? <>
             <FinanceStrip cash={cash.entries.length ? cash.balance : null} retained={summary.bank} invested={summary.invested}
               rub={rub} onCash={() => changeView("cash")}/>
+            <StageBoard cars={ledger.cars} filter={filter} onFilter={setFilter}/>
             <div className="work-columns">
               <VehicleRegistry cars={cars} ledger={ledger} summary={summary} currentDate={currentDate} dateLabel={dateLabel}
                 rub={rub} number={format.format} selected={selected} filter={filter} sort={sort} query={query} mode={registryMode}

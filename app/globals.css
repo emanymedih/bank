@@ -515,22 +515,6 @@ body { background: radial-gradient(ellipse at 90% 6%, #d5e7ff 0, transparent 43%
 .tabs button { color: #49627e; }
 .tabs button.active { color: #214f9a; border-color: #ccd9f0; }
 .tabs button span { color: #4c6687; }
-.stage-board { margin-bottom: 18px; padding: 15px; background: linear-gradient(120deg,#132b4d,#1d4474); color: #f6faff; border: 1px solid #254975; border-radius: 13px; }
-.stage-heading { display: flex; justify-content: space-between; align-items: center; gap: 5px; margin-bottom: 10px; }
-.stage-heading h2 { font-size: 1.12rem; }
-.stage-heading > span { color: #ffd0e2; font-size: .83rem; }
-.stage-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 9px; }
-.stage-card {
-  display: flex; flex-direction: column; gap: 7px; align-items: flex-start; padding: 9px 11px; color: #f4f8ff;
-  background: #112642; border: 1px solid #4b6b91; border-left: 3px solid #81bafa; border-radius: 8px; text-align: left;
-}
-.stage-card:hover, .stage-card[aria-pressed="true"] { background: #294e7c; }
-.stage-card:focus-visible { outline-color: #fff; }
-.stage-card span { font-size: .86rem; font-weight: 660; }
-.stage-card strong { font-size: 1.48rem; line-height: 1; }
-.stage-preparation { border-left-color: #f4c775; }
-.stage-listed { border-left-color: #b5a4ff; }
-.stage-sold { border-left-color: #72dcbc; }
 .badge-purchased { background: #e7f1ff; color: #235697; }
 .badge-preparation { background: #fff3dc; color: #7b501b; }
 .badge-listed { background: #f1eafe; color: #6145a3; }
@@ -554,9 +538,6 @@ body { background: radial-gradient(ellipse at 90% 6%, #d5e7ff 0, transparent 43%
 .contract-signatures { display: grid; gap: 7px; grid-template-columns: repeat(2,minmax(0,1fr)); }
 .contract-footer { flex-wrap: wrap; }
 @media (max-width: 650px) {
-  .stage-board { padding: 10px; margin-bottom: 13px; }
-  .stage-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .stage-card { padding: 7px 8px; }
   .vehicle-progress { align-items: flex-start; flex-direction: column; }
   .metric-title { color: #e1ecfd; }
   .clear-stage { align-self: flex-start; min-height: 32px; }
