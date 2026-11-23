@@ -3,8 +3,8 @@ import { getDb } from "../../../../db";
 import { ledgers } from "../../../../db/schema";
 import { getPhotoBucket, photoKey } from "../../../../lib/ledger-media";
 import { getChatGPTUser } from "../../../chatgpt-auth";
-import { maxCarPhotos, maxPhotoBytes, maxPhotosPerUpload, validLedger } from "../../../ledger";
-import type { CarPhoto, Ledger } from "../../../ledger";
+import { maxCarPhotos, maxLedgerBytes, maxPhotoBytes, maxPhotosPerUpload, parseLedger, readStoredLedger } from "../../../ledger";
+import type { CarPhoto } from "../../../ledger";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ const reply = (body: unknown, status = 200) => Response.json(body, { status, hea
 
 async function readLedger(userId: string) {
   const [saved] = await getDb().select().from(ledgers).where(eq(ledgers.userId, userId));
-  return saved ? { ledger: JSON.parse(saved.data) as Ledger, revision: saved.revision } : null;
+  return saved ? { ledger: readStoredLedger(saved.data), revision: saved.revision } : null;
 }
 
 export async function GET(request: Request, context: Context) {
@@ -23,7 +23,8 @@ export async function GET(request: Request, context: Context) {
   const { carId } = await context.params;
   const photoId = new URL(request.url).searchParams.get("id");
   const saved = await readLedger(user.userId);
-  const photo = saved?.ledger.cars.find(car => car.id === carId)?.photos?.find(photo => photo.id === photoId);
+  if (saved && !saved.ledger) return reply({ error: "Не удалось прочитать сохранённую книгу учёта." }, 500);
+  const photo = saved?.ledger?.cars.find(car => car.id === carId)?.photos?.find(photo => photo.id === photoId);
   if (!photo) return reply({ error: "Фотография не найдена." }, 404);
   const stored = await getPhotoBucket()?.get(photoKey(user.userId, photo.id));
   if (!stored) return reply({ error: "Файл фотографии недоступен." }, 404);
@@ -43,8 +44,9 @@ export async function POST(request: Request, context: Context) {
   if (!bucket) return reply({ error: "Хранилище фотографий пока недоступно." }, 503);
   const { carId } = await context.params;
   const saved = await readLedger(user.userId);
-  const car = saved?.ledger.cars.find(item => item.id === carId);
-  if (!saved || !car) return reply({ error: "Карточка автомобиля не найдена." }, 404);
+  if (saved && !saved.ledger) return reply({ error: "Не удалось прочитать сохранённую книгу учёта." }, 500);
+  const car = saved?.ledger?.cars.find(item => item.id === carId);
+  if (!saved?.ledger || !car) return reply({ error: "Карточка автомобиля не найдена." }, 404);
 
   let form: FormData;
   try { form = await request.formData(); }
@@ -70,11 +72,11 @@ export async function POST(request: Request, context: Context) {
     pictures.push({ photo: { id: crypto.randomUUID(), phase, workId: phase === "work" ? String(workId) : undefined }, file });
   }
 
-  const next = { ...saved.ledger, cars: saved.ledger.cars.map(item =>
-    item.id === carId ? { ...item, photos: [...(item.photos ?? []), ...pictures.map(({ photo }) => photo)] } : item) };
-  if (!validLedger(next)) return reply({ error: "Не удалось обновить историю автомобиля." }, 422);
+  const next = parseLedger({ ...saved.ledger, cars: saved.ledger.cars.map(item =>
+    item.id === carId ? { ...item, photos: [...(item.photos ?? []), ...pictures.map(({ photo }) => photo)] } : item) });
+  if (!next) return reply({ error: "Не удалось обновить историю автомобиля." }, 422);
   const data = JSON.stringify(next);
-  if (data.length > 750_000) return reply({ error: "Превышен размер книги учёта." }, 413);
+  if (new TextEncoder().encode(data).byteLength > maxLedgerBytes) return reply({ error: "Превышен размер книги учёта." }, 413);
   const keys = pictures.map(({ photo }) => photoKey(user.userId, photo.id));
   let cleanable = true;
   try {
