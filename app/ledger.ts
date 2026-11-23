@@ -21,6 +21,7 @@ export const photoPhases = ["before", "work", "after"] as const;
 export const maxCarPhotos = 64;
 export const maxPhotoBytes = 1_200_000;
 export const maxPhotosPerUpload = 8;
+export const maxLedgerBytes = 750_000;
 
 const workEntry = z.object({
   id, name: z.string().trim().min(1).max(100), date: day, notes: z.string().trim().max(750),
@@ -94,12 +95,12 @@ function unique(values: string[]) {
   return new Set(values).size === values.length;
 }
 
-export function validLedger(value: unknown): value is Ledger {
+export function parseLedger(value: unknown): Ledger | null {
   const parsed = ledgerSchema.safeParse(value);
-  if (!parsed.success) return false;
+  if (!parsed.success) return null;
   const { cars, partners, cashEntries } = parsed.data;
   const partnerIds = new Set(partners.map(p => p.id));
-  return partnerIds.size === partners.length
+  const valid = partnerIds.size === partners.length
     && unique((cashEntries ?? []).map(entry => entry.id))
     && unique(cars.map(c => c.id)) && cars.every(c => {
     const payout = figures(c);
@@ -123,6 +124,18 @@ export function validLedger(value: unknown): value is Ledger {
         && (!s.cashWithdrawalDate || (s.withdrawn && c.sold && s.cashWithdrawalDate >= c.sold)))
       && c.expenses.every(e => (e.payer === null || partnerIds.has(e.payer)) && e.date >= c.bought);
   });
+  return valid ? parsed.data : null;
+}
+
+export function validLedger(value: unknown): value is Ledger {
+  return parseLedger(value) !== null;
+}
+
+export function readStoredLedger(data: string): Ledger | null {
+  let value: unknown;
+  try { value = JSON.parse(data); }
+  catch { return null; }
+  return parseLedger(value);
 }
 
 export function splitAmount(total: number, weights: number[]) {
