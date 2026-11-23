@@ -75,8 +75,12 @@ export async function POST(request: Request, context: Context) {
   const next = parseLedger({ ...saved.ledger, cars: saved.ledger.cars.map(item =>
     item.id === carId ? { ...item, photos: [...(item.photos ?? []), ...pictures.map(({ photo }) => photo)] } : item) });
   if (!next) return reply({ error: "Не удалось обновить историю автомобиля." }, 422);
+  // The response can become the next whole-book save request.
+  const nextBook = { ledger: next, revision: revision + 1 };
+  if (new TextEncoder().encode(JSON.stringify(nextBook)).byteLength > maxLedgerBytes) {
+    return reply({ error: "Превышен размер книги учёта." }, 413);
+  }
   const data = JSON.stringify(next);
-  if (new TextEncoder().encode(data).byteLength > maxLedgerBytes) return reply({ error: "Превышен размер книги учёта." }, 413);
   const keys = pictures.map(({ photo }) => photoKey(user.userId, photo.id));
   let cleanable = true;
   try {
@@ -84,13 +88,13 @@ export async function POST(request: Request, context: Context) {
       await bucket.put(keys[index], await file.arrayBuffer(), { httpMetadata: { contentType: "image/jpeg" } });
     }
     cleanable = false;
-    const updated = await getDb().update(ledgers).set({ data, revision: revision + 1 })
+    const updated = await getDb().update(ledgers).set({ data, revision: nextBook.revision })
       .where(and(eq(ledgers.userId, user.userId), eq(ledgers.revision, revision))).returning({ revision: ledgers.revision });
     if (!updated.length) {
       cleanable = true;
       return reply({ error: "Книга обновилась. Повторите загрузку.", conflict: true }, 409);
     }
-    return reply({ ledger: next, revision: revision + 1 });
+    return reply(nextBook);
   } catch {
     return reply({ error: "Не удалось сохранить фотографии. Попробуйте ещё раз." }, 503);
   } finally {

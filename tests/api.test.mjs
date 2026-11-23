@@ -191,3 +191,56 @@ test("plate lookup keeps manual entry available for no match, exhausted balance,
   }
   assert.equal(request.mock.callCount(), cases.length);
 });
+
+test("a photo cannot grow the ledger past the limit for a subsequent save", async () => {
+  const ledger = makeLedger(...Array.from({ length: 6 }, (_, index) => makeCar({
+    id: "car-" + index,
+    works: Array.from({ length: 100 }, (_, work) => ({
+      id: "work-" + work, name: "Работа", date: "2026-10-01", notes: "я".repeat(350),
+    })),
+  })));
+  const targetBytes = 749_924;
+  let remaining = targetBytes - Buffer.byteLength(JSON.stringify(ledger));
+  for (const work of ledger.cars.flatMap(car => car.works)) {
+    if (remaining <= 0) break;
+    const letters = Math.min(399, Math.floor(remaining / 2));
+    work.notes += "я".repeat(letters);
+    remaining -= letters * 2;
+    if (remaining === 1) {
+      work.notes += "X";
+      remaining = 0;
+    }
+  }
+  assert.equal(Buffer.byteLength(JSON.stringify(ledger)), targetBytes);
+  assert.equal((await runtime.as("owner", () => routes.ledger.PUT(ledgerRequest(ledger, 0)))).status, 200);
+
+  const id = ledger.cars[0].id;
+  const upload = await runtime.as("owner", () => routes.photos.POST(photoRequest(id, 1), photoContext(id)));
+  assert.equal(upload.status, 413);
+  assert.equal(runtime.saved("owner").revision, 1);
+  assert.equal(runtime.photos.size, 0);
+});
+
+test("a photo upload cleans staged data if a concurrent ledger write removes its car", async () => {
+  const car = makeCar();
+  runtime.seed("owner", JSON.stringify(makeLedger(car)));
+  const staged = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const put = runtime.env.BUCKET.put;
+  runtime.env.BUCKET.put = async (...args) => {
+    await put(...args);
+    staged.resolve();
+    await release.promise;
+  };
+  const upload = runtime.as("owner", () => routes.photos.POST(photoRequest(car.id, 1), photoContext(car.id)));
+  try {
+    await Promise.race([staged.promise, upload.then(() => assert.fail("Upload finished before staging"))]);
+    const edited = await runtime.as("owner", () => routes.ledger.PUT(ledgerRequest(makeLedger(), 1)));
+    assert.equal(edited.status, 200);
+  } finally {
+    release.resolve();
+  }
+  assert.equal((await upload).status, 409);
+  assert.equal(runtime.photos.size, 0);
+  assert.deepEqual(await (await runtime.as("owner", routes.ledger.GET)).json(), { ledger: makeLedger(), revision: 2 });
+});
