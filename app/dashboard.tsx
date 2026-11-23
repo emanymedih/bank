@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
-  ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpRight, Banknote, BarChart3, CarFront, Check, ChevronDown,
+  ArrowDownLeft, ArrowUpRight, BarChart3, Camera, CarFront, Check,
   CircleDollarSign, ClipboardList, Download, Ellipsis, FileText, Gauge, LayoutDashboard, Pencil, Plus,
-  Search, Settings2, TrendingUp, Trash2, UsersRound, Wallet, X, Mic,
+  Search, TrendingUp, Trash2, UsersRound, Wallet, X, Mic,
 } from "lucide-react";
 import { cashSummary, defaultWeights, emptyLedger, expenseCategories, figures, initialLedger, maxCarPhotos, splitAmount, stageNames, totals, validLedger, vehicleStage, vehicleStages } from "./ledger";
 import { Analytics, CashJournal } from "./insights";
@@ -13,15 +13,20 @@ import { parsePartList, PartPlan, preparePhotos, WorkHistory } from "./car-prep"
 import { downloadBuyerReport } from "./car-report";
 import { PlatePhoto } from "./plate-photo";
 import { ContractForm } from "./contract-form";
+import { ActionQueue, FinanceStrip, StageLabel, VehicleRegistry } from "./workbench";
+import type { CarFilter, RegistryMode } from "./workbench";
+import { DesktopInspector, useWideInspector, VehicleCover, VehicleTimeline } from "./vehicle-workspace";
 import { formatRussianPlate, normalizePlate, plateKey } from "../lib/license-plate";
 import type { PlateDetails } from "../lib/license-plate";
-import type { Car, CarPart, CarPhoto, CashEntry, Expense, Ledger, Partner, PhotoPhase, VehicleStage, WorkEntry } from "./ledger";
+import type { Car, CarPart, CarPhoto, CashEntry, Expense, Ledger, Partner, PhotoPhase, WorkEntry } from "./ledger";
 
-type Filter = "all" | "active" | VehicleStage;
-const boardStages = [...vehicleStages, "sold"] as const;
 const sectionNames = { cars: "Автомобили", partners: "Партнёры", analytics: "Аналитика", cash: "Касса" };
 type View = keyof typeof sectionNames;
-const carTabs = { summary: "Сделка и расходы", history: "Работы и фото", parts: "Запчасти" };
+const navigation = [
+  { id: "cars", icon: LayoutDashboard }, { id: "cash", icon: Wallet },
+  { id: "analytics", icon: BarChart3 }, { id: "partners", icon: UsersRound },
+] as const;
+const carTabs = { timeline: "Лента", summary: "Расчёты", history: "Работы и фото", parts: "Запчасти" };
 type CarTab = keyof typeof carTabs;
 type Dialog =
   | { type: "car"; id?: string }
@@ -44,7 +49,6 @@ const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "sh
 const rub = (value: number) => format.format(value / 100) + " ₽";
 const dateLabel = (value: string) => dateFormat.format(new Date(value)).replace(/\sг\.$/, "").replace(/\.(?=\s)/g, "");
 const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Moscow" }).format();
-const short = (person: Partner) => /\d$/.test(person.name) ? person.name : person.name.split(/\s+/)[0];
 const initials = (person: Partner) => person.name.split(/\s+/).map(part => part[0]).slice(0, 2).join("").toUpperCase();
 const personBy = (ledger: Ledger, id: string) => ledger.partners.find(p => p.id === id);
 const moneyText = (value: number) => String(value / 100).replace(".", ",");
@@ -89,11 +93,14 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<View>("cars");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<CarFilter>("all");
+  const [registryMode, setRegistryMode] = useState<RegistryMode>("overview");
   const [sort, setSort] = useState("recent");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [carTab, setCarTab] = useState<CarTab>("summary");
+  const [carTab, setCarTab] = useState<CarTab>("timeline");
+  const wideInspector = useWideInspector();
+  const rowFocus = useRef<HTMLElement | null>(null);
   const demoPhotoUrls = useRef(new Map<string, string>());
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [error, setError] = useState("");
@@ -105,10 +112,6 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
   const demo = ledger.cars.some(c => c.demo);
   const currentDate = today();
   const cash = cashSummary(ledger, currentDate);
-  const stages = { purchased: 0, preparation: 0, listed: 0, sold: 0 };
-  for (const car of ledger.cars) stages[vehicleStage(car)]++;
-  const overdue = ledger.cars.filter(car => !car.sold && car.nextAction?.due && car.nextAction.due < currentDate).length;
-  const carName = selectedCar?.name;
   const photoSource = (photo: CarPhoto) => demoPhotoUrls.current.get(photo.id) ??
     "/api/photos/" + encodeURIComponent(selectedCar?.id ?? "") + "?id=" + encodeURIComponent(photo.id);
 
@@ -134,7 +137,19 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
   }, [toast]);
 
   const open = (next: Dialog | null) => { setError(""); setActions(false); setDialog(next); };
-  const select = (id: string | null) => { setSelected(id); setCarTab("summary"); setError(""); setActions(false); };
+  const select = (id: string | null) => {
+    if (id && (!selected || document.activeElement?.matches(".vehicle, .mobile-car, .action-queue button, .cash-list button"))) {
+      rowFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
+    if (!id && selected && wideInspector) {
+      const previous = rowFocus.current;
+      requestAnimationFrame(() => previous?.isConnected && previous.focus({ preventScroll: true }));
+    }
+    setSelected(id);
+    setCarTab("timeline");
+    setError("");
+    setActions(false);
+  };
   const changeView = (next: View) => { setView(next); select(null); };
   const requireSignIn = () => window.top?.location.assign(signInUrl);
 
@@ -267,168 +282,80 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
       label: "Удалить демоданные", action: () => save({ ...ledger, cars: ledger.cars.filter(c => !c.demo) }, "Демоданные удалены") });
   }
 
-  return <div className="shell">
+  return <div className={"shell workbench-shell" + (wideInspector && selectedCar ? " inspection-open" : "")}>
     <aside className="sidebar">
       <button className="brand" onClick={() => changeView("cars")} aria-label="Автобанк, главная">
-        <span className="brand-icon"><CarFront size={22} strokeWidth={2.3}/></span>
-        <span>Автобанк<small>Учёт автомобилей</small></span>
+        <span className="brand-icon"><CarFront size={22} strokeWidth={2}/></span>
+        <span>Автобанк</span>
       </button>
       <nav aria-label="Разделы">
-        <button className={view === "cars" ? "nav-item current" : "nav-item"} onClick={() => changeView("cars")}><LayoutDashboard size={19}/> <span>Автомобили</span></button>
-        <button className={view === "partners" ? "nav-item current" : "nav-item"} onClick={() => changeView("partners")}><UsersRound size={19}/> <span>Партнёры</span></button>
-        <button className={view === "analytics" ? "nav-item current" : "nav-item"} onClick={() => changeView("analytics")}><BarChart3 size={19}/> <span>Аналитика</span></button>
-        <button className={view === "cash" ? "nav-item current" : "nav-item"} onClick={() => changeView("cash")}><Wallet size={19}/> <span>Касса</span></button>
+        {navigation.map(({ id, icon: Icon }) => <button key={id} className={view === id ? "nav-item current" : "nav-item"}
+          aria-current={view === id ? "page" : undefined} onClick={() => changeView(id)}><Icon size={19}/><span>{sectionNames[id]}</span></button>)}
       </nav>
       <div className="sidebar-bottom">
         {(demo || !signedIn) && <div className="demo-panel">
           <div className="demo-heading"><span className="demo-dot"/>Демо-данные</div>
-          <p>{signedIn ? "В книге есть примеры сделок." : "Изменения в демо действуют до перезагрузки."}</p>
+          <p>{signedIn ? "В книге есть примеры сделок." : "Изменения действуют до перезагрузки."}</p>
           {signedIn ? <button onClick={clearDemo} disabled={!loaded}>Удалить примеры</button> : <button onClick={requireSignIn}>Войти через ChatGPT</button>}
         </div>}
-        <div className="workspace"><span className="workspace-icon"><Wallet size={18}/></span><div><b>Книга учёта</b><small>{signedIn ? "Личное пространство" : "Демонстрация"}</small></div></div>
       </div>
     </aside>
 
-    <main className="main">
-      <header className="topbar">
-        <div className="breadcrumb"><span>Книга учёта</span><span className="slash">/</span><b>{sectionNames[view]}</b></div>
+    <main className="main workspace-main">
+      <header className="topbar workspace-topbar">
+        <div className="workspace-heading">
+          <h1>{sectionNames[view]}</h1>
+          {view === "cars" && loaded && <span>{summary.active} в работе · {summary.sold} продано</span>}
+        </div>
         <div className="header-right">
-          {view === "cars" && <button className="button secondary export" aria-label="Экспорт CSV" onClick={() => exportLedger(ledger)} disabled={!loaded}><Download size={16}/><span>Экспорт CSV</span></button>}
+          {view === "cars" && <button className="button secondary export" aria-label="Экспорт CSV" onClick={() => exportLedger(ledger)} disabled={!loaded}><Download size={16}/><span>CSV</span></button>}
           {view !== "analytics" && <button className="button primary" onClick={() => open({ type: view === "cars" ? "car" : view === "cash" ? "cash" : "partner" })}
             disabled={!loaded}><Plus size={19}/><span>{view === "cars" ? "Добавить авто" : view === "cash" ? "Добавить движение" : "Добавить партнёра"}</span></button>}
         </div>
       </header>
-      <div className="content">
-        <div className="page-title">
-          <h1>{sectionNames[view]}</h1>
-          <p>{{ cars: "Покупки, продажи и прибыль по каждой машине.", partners: "Остатки прибыли и выплаты по завершённым сделкам.",
-            analytics: "Расходы, продажи и доходность по бюджету покупки.", cash: "Деньги в обороте и доступный остаток." }[view]}</p>
-        </div>
+      <div className="content workspace-content">
         {loadError ? <div className="empty panel"><p role="alert">{loadError}</p><button className="button primary" onClick={() => void load()}>Повторить</button></div>
           : !loaded ? <div className="empty panel" role="status">Загружаем книгу учёта…</div>
-          : <>
-              {view === "analytics" ? <Analytics ledger={ledger} today={currentDate} rub={rub}/>
-              : view === "cash" ? <CashJournal ledger={ledger} today={currentDate} rub={rub} formatDate={dateLabel}
-                onAdd={() => open({type: "cash"})} onEdit={id => open({type: "cash", id})} onCar={select}/>
-              : <>
-              <div className="metrics">
-                <div className="metric hero">
-                  <div className="metric-title"><span className="metric-icon"><Wallet size={19}/></span><span>Доступно на покупку</span></div>
-                  <strong>{cash.entries.length ? rub(cash.balance) : "—"}</strong>
-                  <button className="metric-link" onClick={() => changeView("cash")}>{cash.entries.length ? "Открыть кассу" : "Добавить остаток в кассу"}</button>
-                  <div className="hero-lines" aria-hidden="true"><i/><i/><i/><i/><i/></div>
-                </div>
-                <div className="metric">
-                  <div className="metric-title"><span className="metric-icon mint"><TrendingUp size={19}/></span><span>Накопленная прибыль</span></div>
-                  <strong>{rub(summary.bank)}</strong><small>За вычетом выплат партнёрам</small>
-                </div>
-                <div className="metric">
-                  <div className="metric-title"><span className="metric-icon apricot"><Banknote size={19}/></span><span>Вложено в авто</span></div>
-                  <strong>{rub(summary.invested)}</strong><small>Покупки и расходы по авто в работе</small>
-                </div>
-                <div className="metric">
-                  <div className="metric-title"><span className="metric-icon blue"><CarFront size={19}/></span><span>В работе</span></div>
-                  <strong>{summary.active} <span className="unit">авто</span></strong><small>Продано · {summary.sold}</small>
-                </div>
-              </div>
-              {view === "cars" ? <>
-                <section className="stage-board" aria-label="Этапы продажи">
-                  <div className="stage-heading"><h2>Этапы продажи</h2>{overdue > 0 && <span>{overdue} · с просроченным шагом</span>}</div>
-                  <div className="stage-grid">
-                    {boardStages.map(stage => <button key={stage} className={"stage-card stage-" + stage} aria-pressed={filter === stage}
-                      onClick={() => setFilter(filter === stage ? "all" : stage)}>
-                      <span>{stageNames[stage]}</span><strong>{stages[stage]}</strong>
-                    </button>)}
-                  </div>
-                </section>
-                <section className="panel registry">
-                <div className="section-header"><div><h2>Реестр сделок</h2><p>Откройте автомобиль, чтобы посмотреть расходы и расчёт.</p></div></div>
-                <div className="table-controls">
-                  <div className="tabs" role="group" aria-label="Статус автомобиля">
-                    {([["all", "Все", ledger.cars.length], ["active", "В работе", summary.active], ["sold", "Продано", summary.sold]] as const).map(([value, label, count]) =>
-                      <button key={value} aria-pressed={filter === value} className={filter === value ? "active" : ""} onClick={() => setFilter(value)}>{label}<span>{count}</span></button>)}
-                  </div>
-                  {filter !== "all" && filter !== "active" && filter !== "sold" && <button className="button secondary clear-stage" onClick={() => setFilter("all")}>{stageNames[filter]}<X size={14}/></button>}
-                  <div className="tools">
-                    <label className="search"><Search size={17}/><input type="search" value={query} onChange={e => setQuery(e.target.value)} aria-label="Поиск по авто, VIN или номеру" placeholder="Авто, VIN или госномер"/></label>
-                    <label className="sort"><Settings2 size={17}/><select aria-label="Сортировка" value={sort} onChange={e => setSort(e.target.value)}>
-                      <option value="recent">Сначала новые</option><option value="old">Сначала старые</option><option value="profit">По прибыли</option>
-                    </select><ChevronDown size={14}/></label>
-                  </div>
-                </div>
-                {cars.length ? <>
-                  <div className="table-scroll" tabIndex={0} role="region" aria-label="Таблица сделок с горизонтальной прокруткой">
-                    <table className="deal-table">
-                      <thead><tr>
-                        <th scope="col">Автомобиль</th><th scope="col">Статус</th>
-                        <th scope="col"><span className="with-icon">Дата покупки {sort === "old" ? <ArrowUp size={13}/> : sort === "recent" ? <ArrowDown size={13}/> : null}</span></th>
-                        <th scope="col">Дата продажи</th><th scope="col" className="num">Покупка</th><th scope="col" className="num">Расходы</th>
-                        <th scope="col" className="num">Продажа</th><th scope="col" className="num">Чистая прибыль</th>
-                        {ledger.partners.map(p => <th scope="col" key={p.id} className="num" title={p.name}>{short(p)} <small>Выплата · Остаток</small></th>)}
-                        <th scope="col" className="num">Накоплено из прибыли</th>
-                      </tr></thead>
-                      <tbody>{cars.map((c, index) => {
-                        const numbers = figures(c);
-                        const snapshot = summary.timeline.get(c.id);
-                        return <tr key={c.id} onClick={() => select(c.id)}>
-                          <td><button className="vehicle" onClick={e => { e.stopPropagation(); select(c.id); }}>
-                            <span className={"vehicle-icon tone-" + (index % 4)}><CarFront size={21}/></span>
-                            <span><b>{c.name}</b><small>{[c.year, c.mileage === null ? c.vin : format.format(c.mileage) + " км"].filter(Boolean).join(" · ") || "Карточка авто"}</small></span>
-                          </button></td>
-                          <td><Badge stage={vehicleStage(c)}/></td>
-                          <td className="date">{dateLabel(c.bought)}</td><td className="date">{c.sold ? dateLabel(c.sold) : "—"}</td>
-                          <td className="num">{rub(c.buy)}</td><td className="num">{rub(numbers.expenses)}</td>
-                          <td className="num">{c.price === null ? "—" : rub(c.price)}</td>
-                          <td className={"num " + profitColor(numbers.net)}>{numbers.net === null ? "—" : (numbers.net > 0 ? "+" : "") + rub(numbers.net)}</td>
-                          {ledger.partners.map(p => <td className="num" key={p.id}>{snapshot ? <>
-                            <span>{rub(snapshot.people[p.id])}</span>
-                            {numbers.people[p.id]?.profit > 0 && <small className="cell-caption">{numbers.people[p.id].withdrawn ? "Забрал" : "В банке"}</small>}
-                          </> : "—"}</td>)}
-                          <td className="num">{snapshot ? rub(snapshot.bank) : "—"}</td>
-                        </tr>;
-                      })}</tbody>
-                    </table>
-                  </div>
-                  <div className="mobile-cars">{cars.map((c, index) => {
-                    const calc = figures(c);
-                    return <button key={c.id} className="mobile-car" onClick={() => select(c.id)}>
-                      <span className="mobile-car-top"><span className="vehicle"><span className={"vehicle-icon tone-" + (index % 4)}><CarFront size={21}/></span><span><b>{c.name}</b><small>{c.year ? c.year + " · " : ""}{dateLabel(c.bought)}</small></span></span><Badge stage={vehicleStage(c)}/></span>
-                      <span className="mobile-car-bottom"><span><small>Покупка</small><b>{rub(c.buy)}</b></span><span><small>Расходы</small><b>{rub(calc.expenses)}</b></span><span><small>Прибыль</small><b className={profitColor(calc.net)}>{calc.net === null ? "—" : rub(calc.net)}</b></span></span>
-                    </button>;
-                  })}</div>
-                </> : <div className="empty"><div className="empty-icon"><CarFront size={26}/></div><h3>{ledger.cars.length ? "Автомобили не найдены" : "В книге пока нет автомобилей"}</h3>
-                  <p>{ledger.cars.length ? "Измените поиск или статус сделки." : "Добавьте первую покупку, чтобы начать учёт."}</p>
-                  {!ledger.cars.length && <button className="button primary" onClick={() => open({ type: "car" })}><Plus size={17}/>Добавить авто</button>}
-                </div>}
-                <div className="table-footer"><span>Автомобилей в списке · {cars.length} из {ledger.cars.length}</span><span>Все суммы в рублях</span></div>
-              </section></> : <section className="panel partners">
-                <div className="section-header"><div><h2>Расчёты с партнёрами</h2><p>Доли прибыли и внесённые средства задаются в карточке автомобиля.</p></div></div>
-                <div className="partner-grid">
-                  {ledger.partners.map((p, index) => {
-                    const withdrawn = ledger.cars.reduce((sum, c) => {
-                      const share = figures(c).people[p.id];
-                      return sum + (share?.withdrawn ? share.profit : 0);
-                    }, 0);
-                    return <div className="partner" key={p.id}>
-                      <div className="partner-head"><span className={"avatar tone-" + (index % 4)}>{initials(p)}</span><b>{p.name}</b><button className="icon-button" onClick={() => open({ type: "partner", id: p.id })} aria-label={"Редактировать " + p.name}><Pencil size={17}/></button></div>
-                      <div className="partner-totals"><div><small>В банке</small><strong>{rub(summary.balances[p.id])}</strong></div><div><small>Забрал</small><strong>{rub(withdrawn)}</strong></div></div>
-                    </div>;
-                  })}
-                </div>
-              </section>}
-              </>}
-            </>}
+          : view === "analytics" ? <Analytics ledger={ledger} today={currentDate} rub={rub}/>
+          : view === "cash" ? <CashJournal ledger={ledger} today={currentDate} rub={rub} formatDate={dateLabel}
+            onAdd={() => open({ type: "cash" })} onEdit={id => open({ type: "cash", id })} onCar={select}/>
+          : view === "cars" ? <>
+            <FinanceStrip cash={cash.entries.length ? cash.balance : null} retained={summary.bank} invested={summary.invested}
+              rub={rub} onCash={() => changeView("cash")}/>
+            <div className="work-columns">
+              <VehicleRegistry cars={cars} ledger={ledger} summary={summary} currentDate={currentDate} dateLabel={dateLabel}
+                rub={rub} number={format.format} selected={selected} filter={filter} sort={sort} query={query} mode={registryMode}
+                onFilter={setFilter} onSort={setSort} onQuery={setQuery} onMode={setRegistryMode} onSelect={select}
+                onAdd={() => open({ type: "car" })}/>
+              <ActionQueue cars={ledger.cars} today={currentDate} dateLabel={dateLabel} onOpen={select}
+                onPlan={id => { select(id); open({ type: "progress", id }); }}/>
+            </div>
+          </> : <section className="panel partners partner-book">
+            <div className="section-header"><div><h2>Расчёты с партнёрами</h2><p>Взносы и доли задаются в карточке автомобиля.</p></div></div>
+            <div className="partner-grid">
+              {ledger.partners.map((p, index) => {
+                const withdrawn = ledger.cars.reduce((sum, c) => {
+                  const share = figures(c).people[p.id];
+                  return sum + (share?.withdrawn ? share.profit : 0);
+                }, 0);
+                return <div className="partner" key={p.id}>
+                  <div className="partner-head"><span className={"avatar tone-" + (index % 4)}>{initials(p)}</span><b>{p.name}</b><button className="icon-button" onClick={() => open({ type: "partner", id: p.id })} aria-label={"Редактировать " + p.name}><Pencil size={17}/></button></div>
+                  <div className="partner-totals"><div><small>В банке</small><strong>{rub(summary.balances[p.id])}</strong></div><div><small>Забрал</small><strong>{rub(withdrawn)}</strong></div></div>
+                </div>;
+              })}
+            </div>
+          </section>}
       </div>
     </main>
-    {selectedCar && <Overlay side title={carName ?? "Автомобиль"} onClose={() => select(null)} inactive={Boolean(dialog)}>
+    {selectedCar && <VehicleInspector wide={wideInspector} identity={selectedCar.id} onClose={() => select(null)} inactive={Boolean(dialog)}>
       <div className="detail-heading">
-        <div><Badge stage={vehicleStage(selectedCar)}/><h2>{selectedCar.name}</h2><div className="detail-meta">
+        <div><StageLabel stage={vehicleStage(selectedCar)}/><h2>{selectedCar.name}</h2><div className="detail-meta">
           {selectedCar.year && <span>{selectedCar.year} г.</span>}
           {selectedCar.mileage !== null && <span><Gauge size={16}/> {format.format(selectedCar.mileage)} км</span>}
           {selectedCar.registration && <span className="car-registration">{selectedCar.registration}</span>}
-          <span>VIN {selectedCar.vin || "—"}</span>
+          {selectedCar.vin && <span>VIN {selectedCar.vin}</span>}
         </div></div>
-        <div className="detail-actions"><button className="button secondary" onClick={() => open({ type: "car", id: selectedCar.id })}><Pencil size={15}/>Изменить</button>
+        <div className="detail-actions"><button className="icon-button bordered" aria-label="Редактировать автомобиль" onClick={() => open({ type: "car", id: selectedCar.id })}><Pencil size={16}/></button>
           <button className="icon-button bordered" aria-expanded={actions} aria-label="Действия с автомобилем" onClick={() => setActions(!actions)}><Ellipsis size={20}/></button>
           {actions && <button className="delete-action" onClick={() => confirmDelete(selectedCar)}><Trash2 size={16}/>Удалить авто</button>}
         </div>
@@ -442,14 +369,20 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
         </div>
         <div className="vehicle-progress-actions">
           {!selectedCar.sold && <button className="button secondary" onClick={() => open({type:"progress", id:selectedCar.id})}><Pencil size={15}/>Этап и шаг</button>}
-          <button className="button primary" onClick={() => open({type:"contract", id:selectedCar.id})}><FileText size={16}/>Договор</button>
         </div>
       </div>
+      <VehicleCover key={selectedCar.id} car={selectedCar} source={photoSource} onHistory={() => setCarTab("history")}/>
       <div className="tabs car-tabs" role="group" aria-label="Раздел карточки">
         {(Object.keys(carTabs) as CarTab[]).map(tab => <button key={tab} type="button" className={carTab === tab ? "active" : ""}
           aria-pressed={carTab === tab} onClick={() => { setCarTab(tab); setError(""); }}>{carTabs[tab]}</button>)}
       </div>
-      {carTab === "history" ? <WorkHistory car={selectedCar} busy={busy} error={dialog ? "" : error} source={photoSource} dateLabel={dateLabel}
+      {carTab === "timeline" ? <>
+        <VehicleTotals car={selectedCar}/>
+        <VehicleTimeline car={selectedCar} dateLabel={dateLabel} rub={rub}
+          onExpense={expense => open({ type: "expense", id: selectedCar.id, expense })}
+          onWork={workId => open({ type: "work", id: selectedCar.id, workId })}
+          onPhotos={() => setCarTab("history")}/>
+      </> : carTab === "history" ? <WorkHistory car={selectedCar} busy={busy} error={dialog ? "" : error} source={photoSource} dateLabel={dateLabel}
         onUpload={(phase, files, workId) => uploadPhotos(selectedCar, phase, files, workId)}
         onWork={work => open({type:"work", id:selectedCar.id, workId:work?.id})}
         onPhoto={photo => open({type:"photo", id:selectedCar.id, photoId:photo.id})}
@@ -478,7 +411,12 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
           await saveCar({ ...selectedCar, shares: selectedCar.shares.map(s => s.partner === id
             ? { ...s, withdrawn: false, cashWithdrawalDate: undefined } : s) }, "Отметка о выплате снята");
         }}/>}
-    </Overlay>}
+      <footer className="vehicle-quick-actions" aria-label="Действия с автомобилем">
+        <button className="button primary" disabled={busy} onClick={() => open({ type: "expense", id: selectedCar.id })}><Plus size={17}/>Расход</button>
+        <button className="button secondary" onClick={() => { setCarTab("history"); setError(""); }}><Camera size={17}/>Фото</button>
+        <button className="button secondary" onClick={() => open({type:"contract", id:selectedCar.id})}><FileText size={17}/>Договор</button>
+      </footer>
+    </VehicleInspector>}
     {dialog && <Overlay title={dialogTitle(dialog)} onClose={() => { if (!busy) open(null); }}>
       {dialog.type === "confirm" ? <>
         <p className="confirm-copy">{dialog.message}</p>
@@ -488,7 +426,8 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
         knownCars={ledger.cars} signedIn={signedIn}
         error={error} setError={setError} busy={busy} onCancel={() => open(null)} onSave={async car => {
           if (await saveCar(car, dialog.id ? "Карточка обновлена" : "Автомобиль добавлен")) {
-            setQuery(""); setFilter("all"); select(car.id); open(null);
+            if (!dialog.id) { setQuery(""); setFilter("all"); select(car.id); }
+            open(null);
           }
         }}/>
       : dialog.type === "expense" ? selectedCar && <ExpenseForm car={selectedCar} partners={ledger.partners}
@@ -600,10 +539,6 @@ function profitColor(net: number | null) {
   return net > 0 ? "positive" : "negative";
 }
 
-function Badge({ stage }: { stage: VehicleStage }) {
-  return <span className={"badge badge-" + stage}><span/>{stageNames[stage]}</span>;
-}
-
 function dialogTitle(dialog: Dialog) {
   if (dialog.type === "confirm") return dialog.title;
   if (dialog.type === "car") return dialog.id ? "Редактировать автомобиль" : "Добавить автомобиль";
@@ -619,6 +554,22 @@ function dialogTitle(dialog: Dialog) {
   if (dialog.type === "photo") return "Подпись к фотографии";
   if (dialog.type === "report") return "PDF для покупателя";
   return dialog.id ? "Редактировать партнёра" : "Добавить партнёра";
+}
+
+function VehicleInspector({ wide, identity, onClose, inactive, children }: {
+  wide: boolean; identity: string; onClose: () => void; inactive: boolean; children: ReactNode;
+}) {
+  return wide ? <DesktopInspector identity={identity} inactive={inactive} onClose={onClose}>{children}</DesktopInspector>
+    : <Overlay side title="Карточка автомобиля" onClose={onClose} inactive={inactive}>{children}</Overlay>;
+}
+
+function VehicleTotals({ car }: { car: Car }) {
+  const calc = figures(car);
+  return <dl className="vehicle-totals">
+    <div><dt>Вложено</dt><dd>{rub(calc.invested)}</dd></div>
+    <div><dt>{car.sold ? "Продажа" : "Цена объявления"}</dt><dd>{car.price ? rub(car.price) : car.askingPrice ? rub(car.askingPrice) : "—"}</dd></div>
+    <div><dt>Чистая прибыль</dt><dd className={profitColor(calc.net)}>{calc.net === null ? "—" : rub(calc.net)}</dd></div>
+  </dl>;
 }
 
 function Overlay({ side, title, onClose, inactive, children }: {
@@ -637,7 +588,7 @@ function Overlay({ side, title, onClose, inactive, children }: {
     <div className="dialog-inner">
       <header className="dialog-header">
         {side ? <div className="drawer-label" id={titleId}><ClipboardList size={17}/> Карточка автомобиля</div> : <h2 id={titleId}>{title}</h2>}
-        <button className="icon-button" aria-label="Закрыть" onClick={onClose}><X size={22}/></button>
+        <button className="icon-button" aria-label={side ? "Закрыть карточку" : "Закрыть"} onClick={onClose}><X size={22}/></button>
       </header>
       <div className="dialog-content">{children}</div>
     </div>

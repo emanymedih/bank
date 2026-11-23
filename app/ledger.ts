@@ -206,8 +206,10 @@ function example(id: string, name: string, year: number, mileage: number, bought
 export const initialLedger: Ledger = {
   partners: initialPartners,
   cars: [
-    { ...example("demo-6", "Škoda Octavia", 2017, 112400, "2026-11-18", 1230000, null, null, [["Диагностика", 8500, "max"], ["Комплект шин", 28000, "alex"]]), stage: "listed", askingPrice: 149_000_000 },
-    example("demo-5", "Kia Rio", 2018, 98400, "2026-11-14", 780000, null, null, [["Химчистка", 12000, "max"], ["Замена масла", 6500, "alex"]]),
+    { ...example("demo-6", "Škoda Octavia", 2017, 112400, "2026-11-18", 1230000, null, null, [["Диагностика", 8500, "max"], ["Комплект шин", 28000, "alex"]]), stage: "listed", askingPrice: 149_000_000,
+      nextAction: { title: "Показ автомобиля", due: "2026-11-23" } },
+    { ...example("demo-5", "Kia Rio", 2018, 98400, "2026-11-14", 780000, null, null, [["Химчистка", 12000, "max"], ["Замена масла", 6500, "alex"]]),
+      nextAction: { title: "Сделать фото для объявления", due: "2026-11-22" } },
     example("demo-4", "Hyundai Solaris", 2016, 105000, "2026-10-28", 840000, "2026-11-12", 1015000, [["Кузовные работы", 22000, "max"], ["ТО", 10500, "alex"]]),
     example("demo-3", "Lada 2108", 1998, 176000, "2026-10-23", 145000, "2026-11-08", 215000, [["Запчасти", 15000, "alex"]], [true, false]),
     example("demo-2", "Škoda Fabia", 2013, 139600, "2026-10-12", 1000000, "2026-11-04", 1500000, [["Шины", 30000, "max"], ["Подготовка", 70000, "alex"]], [true, false]),
