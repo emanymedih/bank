@@ -373,3 +373,58 @@ h1 { font-size: 2rem; letter-spacing: -.04em; }
 @media (prefers-reduced-motion: reduce) {
   .workbench-shell, .button, .stage-card, .drawer[open], .desktop-inspector { transition: none; animation: none; }
 }
+
+.funding-switch {
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; width: fit-content;
+  padding: 3px; border-radius: 9px; background: #eceee3;
+}
+.funding-switch button {
+  min-height: 36px; padding: 5px 9px; border: 1px solid transparent; border-radius: 6px;
+  font-size: .8125rem; font-weight: 750; color: var(--brand); background: transparent;
+}
+.funding-switch button[aria-pressed="true"] { background: var(--surface); border-color: var(--line); }
+.funding-switch button:hover { border-color: var(--brand); }
+.cash-tabs { margin-bottom: 15px; }
+.cash-tabs button { min-height: 40px; padding-inline: 12px; }
+.funding-chart { min-width: 0; font-variant-numeric: tabular-nums; }
+.funding-bar { display: flex; height: 10px; overflow: hidden; border-radius: 999px; background: #e7eade; }
+.funding-bar span { flex: 0 0 auto; }
+.funding-legend { display: grid; gap: 5px; list-style: none; padding: 0; margin: 8px 0 0; }
+.funding-legend li { display: grid; grid-template-columns: 9px minmax(0,1fr) auto auto; align-items: baseline; gap: 8px; font-size: .8125rem; }
+.funding-legend li > span { overflow-wrap: anywhere; }
+.funding-legend small { color: var(--muted); min-width: 44px; text-align: right; }
+.funding-swatch { display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 2px; }
+.funding-heading { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: baseline; gap: 4px 9px; }
+.vehicle-funding { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.vehicle-funding h3 { font-size: 1rem; }
+.vehicle-funding .funding-switch { margin: 7px 0 9px; }
+.vehicle-funding .muted { margin-top: 6px; font-size: .8125rem; }
+.capital-controls { display: flex; flex-wrap: wrap; gap: 7px 12px; padding: 0 20px 13px; }
+.capital-table-wrap { padding: 0 20px 14px; }
+.capital-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.capital-table th, .capital-table td { text-align: right; padding: 9px 6px 9px 8px; border-top: 1px solid var(--line); }
+.capital-table thead th { color: var(--muted); font-size: .8125rem; }
+.capital-table th:first-child { text-align: left; padding-left: 0; overflow-wrap: anywhere; }
+.capital-table td { font-weight: 760; }
+.capital-table td small { display: block; color: var(--muted); font-weight: 600; }
+.capital-source { display: inline-flex; align-items: baseline; gap: 6px; }
+.capital-table-wrap > p { color: var(--muted); font-size: .8125rem; margin-top: 8px; }
+.capital-car-list { list-style: none; margin: 0; padding: 0 20px 12px; }
+.capital-car-list > li { border-top: 1px solid var(--line); padding: 3px 0 10px; }
+.capital-car-list .funding-chart { margin-top: 3px; }
+.funding-open {
+  display: flex; align-items: center; text-align: left; width: 100%; gap: 7px;
+  padding: 5px 0; min-height: 44px; border: 0; border-radius: 4px; background: transparent; color: var(--ink);
+}
+.funding-open:hover { color: var(--brand); }
+.funding-open span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.funding-open small { display: block; color: var(--muted); }
+.funding-open strong { font-variant-numeric: tabular-nums; }
+.capital-empty { margin: 0 20px 16px; }
+@media (max-width: 720px) {
+  .funding-switch button { min-height: 44px; }
+  .capital-cars .section-header, .capital-overview .section-header,
+  .capital-table-wrap, .capital-controls, .capital-car-list { padding-inline: 12px; }
+  .capital-table td { font-size: .8125rem; }
+  .capital-empty { margin-inline: 12px; }
+}

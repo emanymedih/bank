@@ -9,6 +9,9 @@ import {
 } from "lucide-react";
 import { cashSummary, defaultWeights, emptyLedger, expenseCategories, figures, initialLedger, maxCarPhotos, splitAmount, stageNames, totals, validLedger, vehicleStage, vehicleStages } from "./ledger";
 import { Analytics, CashJournal } from "./insights";
+import type { CashTab } from "./insights";
+import { VehicleFunding } from "./funding-view";
+import type { FundingMode } from "./purchase-funding";
 import { parsePartList, PartPlan, preparePhotos, WorkHistory } from "./car-prep";
 import { downloadBuyerReport } from "./car-report";
 import { PlatePhoto } from "./plate-photo";
@@ -93,6 +96,8 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<View>("cars");
+  const [cashTab, setCashTab] = useState<CashTab>("journal");
+  const [fundingMode, setFundingMode] = useState<FundingMode>("invested");
   const [filter, setFilter] = useState<CarFilter>("all");
   const [registryMode, setRegistryMode] = useState<RegistryMode>("overview");
   const [sort, setSort] = useState("recent");
@@ -138,7 +143,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
 
   const open = (next: Dialog | null) => { setError(""); setActions(false); setDialog(next); };
   const select = (id: string | null) => {
-    if (id && (!selected || document.activeElement?.matches(".vehicle, .mobile-car, .action-queue button, .cash-list button"))) {
+    if (id && (!selected || document.activeElement?.matches(".vehicle, .mobile-car, .action-queue button, .cash-list button, .funding-open"))) {
       rowFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     }
     if (!id && selected && wideInspector) {
@@ -319,7 +324,8 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
           : !loaded ? <div className="empty panel" role="status">Загружаем книгу учёта…</div>
           : view === "analytics" ? <Analytics ledger={ledger} today={currentDate} rub={rub}/>
           : view === "cash" ? <CashJournal ledger={ledger} today={currentDate} rub={rub} formatDate={dateLabel}
-            onAdd={() => open({ type: "cash" })} onEdit={id => open({ type: "cash", id })} onCar={select}/>
+            onAdd={() => open({ type: "cash" })} onEdit={id => open({ type: "cash", id })} onCar={select}
+            tab={cashTab} onTab={setCashTab} mode={fundingMode} onMode={setFundingMode}/>
           : view === "cars" ? <>
             <FinanceStrip cash={cash.entries.length ? cash.balance : null} retained={summary.bank} invested={summary.invested}
               rub={rub} onCash={() => changeView("cash")}/>
@@ -380,6 +386,12 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
       </div>
       {carTab === "timeline" ? <>
         <VehicleTotals car={selectedCar}/>
+        <VehicleFunding car={selectedCar} partners={ledger.partners} through={currentDate} mode={fundingMode}
+          onMode={setFundingMode} onPortfolio={view === "cash" && cashTab === "capital" ? undefined : () => {
+            setCashTab("capital");
+            changeView("cash");
+            requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(".cash-tabs button[aria-pressed='true']")?.focus());
+          }} rub={rub}/>
         <VehicleTimeline car={selectedCar} dateLabel={dateLabel} rub={rub}
           onExpense={expense => open({ type: "expense", id: selectedCar.id, expense })}
           onWork={workId => open({ type: "work", id: selectedCar.id, workId })}
