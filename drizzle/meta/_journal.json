@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1795455212852,
+      "tag": "0000_bumpy_reaper",
+      "breakpoints": true
+    }
+  ]
+}
