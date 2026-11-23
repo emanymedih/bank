@@ -4,6 +4,8 @@ import { useState } from "react";
 import { BarChart3, ChevronDown, Plus, Wallet } from "lucide-react";
 import { cashSummary, yearAnalytics, yearsWithActivity } from "./ledger";
 import type { Ledger } from "./ledger";
+import { CapitalPortfolio } from "./funding-view";
+import type { FundingMode } from "./purchase-funding";
 
 const months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 const monthLabels = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
@@ -74,9 +76,12 @@ export function Analytics({ ledger, today, rub }: { ledger: Ledger; today: strin
   </>;
 }
 
-export function CashJournal({ ledger, today, rub, formatDate, onAdd, onEdit, onCar }: {
+export type CashTab = "journal" | "capital";
+
+export function CashJournal({ ledger, today, rub, formatDate, onAdd, onEdit, onCar, tab, onTab, mode, onMode }: {
   ledger: Ledger; today: string; rub: (value: number) => string; formatDate: (value: string) => string;
   onAdd: () => void; onEdit: (id: string) => void; onCar: (id: string) => void;
+  tab: CashTab; onTab: (tab: CashTab) => void; mode: FundingMode; onMode: (mode: FundingMode) => void;
 }) {
   const cash = cashSummary(ledger, today);
   return <>
@@ -85,7 +90,12 @@ export function CashJournal({ ledger, today, rub, formatDate, onAdd, onEdit, onC
       <div className="metric"><span className="metric-title">Поступления</span><strong>{rub(cash.income)}</strong><small>С начала учёта</small></div>
       <div className="metric"><span className="metric-title">Списания</span><strong>{rub(cash.spending)}</strong><small>С начала учёта</small></div>
     </div>
-    <section className="panel insights-panel">
+    <div className="funding-switch cash-tabs" role="group" aria-label="Раздел кассы">
+      <button type="button" aria-pressed={tab === "journal"} onClick={() => onTab("journal")}>Движение денег</button>
+      <button type="button" aria-pressed={tab === "capital"} onClick={() => onTab("capital")}>Капитал в авто</button>
+    </div>
+    {tab === "capital" ? <CapitalPortfolio ledger={ledger} today={today} mode={mode} onMode={onMode}
+      rub={rub} formatDate={formatDate} onCar={onCar}/> : <section className="panel insights-panel">
       <div className="section-header"><div><h2>Движение денег</h2><p>Покупки, расходы и продажи из карточек появляются здесь, когда выбрана общая касса.</p></div></div>
       {cash.entries.length ? <ul className="cash-list">{cash.entries.map(entry => <li key={entry.source + entry.id}>
         <button onClick={() => entry.source === "car" ? onCar(entry.carId) : onEdit(entry.id)}>
@@ -96,6 +106,6 @@ export function CashJournal({ ledger, today, rub, formatDate, onAdd, onEdit, onC
         <p>Запишите начальный остаток как пополнение. Возврат личных вложений можно записать как списание.</p>
         <button className="button primary" onClick={onAdd}><Plus size={17}/>Добавить движение</button>
       </div>}
-    </section>
+    </section>}
   </>;
 }
