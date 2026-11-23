@@ -175,7 +175,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
           if (result.conflict) {
             await load();
             open(null);
-            setToast("Книга обновилась. Откройте запись заново.");
+            setToast("Правки не сохранились. Откройте запись заново.");
             return false;
           }
           throw Error(result.error ?? "Сохранение не удалось. Попробуйте ещё раз.");
@@ -795,11 +795,11 @@ function CarForm({ car, partners, knownCars, signedIn, error, setError, busy, on
         setIdentity(previous => fillIdentity(previous, details));
         setPlateMessage("Подставлены найденные данные. Сверьте их с документами и заполните пустые поля.");
       } else if (result.status === "not_found") {
-        setPlateMessage("База не нашла машину. Госномер можно сохранить, остальные поля заполните вручную.");
+        setPlateMessage("По этому госномеру машина в базе не найдена. Заполните остальные поля вручную.");
       } else if (result.status === "balance") {
-        setPlateMessage("У сервиса поиска недостаточно средств на балансе. Можно заполнить данные вручную.");
+        setPlateMessage("На балансе поиска закончились средства. Госномер уже в форме. Остальные поля заполните вручную.");
       } else {
-        setPlateMessage("База сейчас недоступна. Госномер можно сохранить, остальные поля заполните вручную.");
+        setPlateMessage("База сейчас недоступна. Повторите поиск позже или заполните поля вручную.");
       }
     } catch {
       if (plateRef.current === plateKey(plate)) setPlateMessage("Не удалось получить данные. Можно заполнить карточку вручную.");
@@ -868,21 +868,22 @@ function CarForm({ car, partners, knownCars, signedIn, error, setError, busy, on
       <label className="field">Дата покупки<input type="date" name="bought" defaultValue={car?.bought ?? today()} required/></label>
       <label className="field">Цена покупки, ₽<input name="buy" inputMode="decimal" value={buyInput} onChange={e => setBuyInput(e.target.value)} required placeholder="0" maxLength={18}/></label>
     </div>
-    <label className="option-check"><input type="checkbox" checked={cashPurchase} onChange={e => setCashPurchase(e.target.checked)}/> Оплачено из общей кассы</label>
+    <label className="option-check"><input type="checkbox" checked={cashPurchase} onChange={e => setCashPurchase(e.target.checked)}/> Покупка из общей кассы</label>
+    {cashPurchase && <p className="muted"><small>В кассе появится списание на цену покупки. Доли прибыли или убытка задаются отдельно.</small></p>}
     <details className="form-shares" open={Boolean(car && car.shares.length > 1) || undefined}>
       <summary>Участники и доли · {included.length}</summary>
       <div className="split-controls">{partners.map(p => <label key={p.id} className="partner-choice">
         <input type="checkbox" checked={selectedPartners.includes(p.id)} onChange={e => {
           setSelectedPartners(e.target.checked ? [...selectedPartners, p.id] : selectedPartners.filter(id => id !== p.id));
         }}/>{p.name}</label>)}</div>
-      <label className="manual-choice"><input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)}/> Задать взносы и доли вручную</label>
+      <label className="manual-choice"><input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)}/> {cashPurchase ? "Задать доли вручную" : "Задать взносы и доли вручную"}</label>
       {included.map((p, index) => {
         const old = car?.shares.find(s => s.partner === p.id);
         return manual ? <div className="share-inputs" key={p.id}>
           <b>{p.name}</b>
           {cashPurchase ? <span/> : <label className="field">Взнос, ₽<MoneyField name={"buy-" + p.id} value={moneyText((car?.cashPurchase ? undefined : old?.buy) ?? preview[index])} required={false}/></label>}
-          <label className="field">Доля, %<MoneyField name={"weight-" + p.id} value={moneyText(old?.weight ?? ratios[index])} required={false}/></label>
-        </div> : <div className="share-preview" key={p.id}><span>{p.name}</span><span>{rub(preview[index])} · {format.format(ratios[index] / 100)}%</span></div>;
+          <label className="field">Доля прибыли или убытка, %<MoneyField name={"weight-" + p.id} value={moneyText(old?.weight ?? ratios[index])} required={false}/></label>
+        </div> : <div className="share-preview" key={p.id}><span>{p.name}</span><span>{cashPurchase ? "" : rub(preview[index]) + " · "}{format.format(ratios[index] / 100)}%</span></div>;
       })}
     </details>
     <FormFooter error={error} busy={busy} onCancel={onCancel}/>
