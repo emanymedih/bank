@@ -41,7 +41,7 @@ export function Analytics({ ledger, today, rub }: { ledger: Ledger; today: strin
       </div>
       {hasActivity ? <div className="chart-content">
         <div className="chart-key"><span><i className="key-expense"/>Расходы</span><span><i className="key-profit"/>Чистая прибыль</span>{low > 0 && <span><i className="key-loss"/>Убыток</span>}</div>
-        <div className="chart-scroll">
+        <div className="chart-scroll" tabIndex={0} role="region" aria-label="График по месяцам">
           <div className="chart" role="group" aria-label={"Показатели по месяцам за " + year + " год"}>
             {results.months.map((month, index) => <button key={months[index]} type="button" className={index === selected ? "chart-month selected" : "chart-month"}
               aria-pressed={index === selected} aria-label={months[index] + ", расходы " + rub(month.expenses) + ", чистая прибыль " + rub(month.profit)}

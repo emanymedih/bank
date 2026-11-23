@@ -1,6 +1,6 @@
 "use client";
 
-import { Banknote, CarFront, ChevronDown, ClipboardList, Clock3, ReceiptText, Search, Wallet } from "lucide-react";
+import { ArrowRight, CarFront, ChevronDown, ClipboardList, Clock3, ReceiptText, Search, Wallet } from "lucide-react";
 import { figures, stageNames, vehicleStage, vehicleStages } from "./ledger";
 import type { Car, Ledger, VehicleStage, totals } from "./ledger";
 
@@ -15,20 +15,29 @@ export function StageLabel({ stage }: { stage: VehicleStage }) {
 export function FinanceStrip({ cash, retained, invested, rub, onCash }: {
   cash: number | null; retained: number; invested: number; rub: (value: number) => string; onCash: () => void;
 }) {
-  return <dl className="finance-strip">
+  return <dl className="finance-strip" aria-label="Сводка по деньгам">
     <div className="finance-cash">
-      <dt><Wallet size={18}/> Доступно на покупку</dt>
-      <dd>{cash === null ? "—" : rub(cash)}<button type="button" onClick={onCash}>{cash === null ? "Добавить остаток" : "Открыть кассу"}</button></dd>
+      <dt><Wallet size={17} aria-hidden="true"/> Доступно на покупку</dt>
+      <dd><strong>{cash === null ? "—" : rub(cash)}</strong>
+        <button type="button" onClick={onCash}>{cash === null ? "Добавить остаток" : "Открыть кассу"}<ArrowRight size={15} aria-hidden="true"/></button>
+      </dd>
     </div>
-    <div>
-      <dt><Banknote size={17}/> Накопленная прибыль</dt>
-      <dd>{rub(retained)}</dd>
-    </div>
-    <div>
-      <dt><CarFront size={18}/> Вложено в авто</dt>
-      <dd>{rub(invested)}</dd>
-    </div>
+    <div><dt>Накопленная прибыль</dt><dd><strong>{rub(retained)}</strong></dd></div>
+    <div><dt>Вложено в авто</dt><dd><strong>{rub(invested)}</strong></dd></div>
   </dl>;
+}
+
+export function StageBoard({ cars, filter, onFilter }: {
+  cars: Car[]; filter: CarFilter; onFilter: (stage: CarFilter) => void;
+}) {
+  const counts: Record<VehicleStage, number> = { purchased: 0, preparation: 0, listed: 0, sold: 0 };
+  for (const car of cars) counts[vehicleStage(car)]++;
+  return <div className="stage-board" role="group" aria-label="Этапы продажи">
+    {stages.map(stage => <button key={stage} type="button" className={"stage-card stage-card-" + stage}
+      aria-pressed={filter === stage} onClick={() => onFilter(filter === stage ? "all" : stage)}>
+      <span>{stageNames[stage]}</span><strong>{counts[stage]}</strong>
+    </button>)}
+  </div>;
 }
 
 function stepTiming(car: Car, today: string, dateLabel: (value: string) => string) {
@@ -100,11 +109,9 @@ function rowDescription(car: Car, props: Pick<RegistryProps, "number" | "dateLab
 export function VehicleRegistry(props: RegistryProps) {
   const { cars, ledger, summary, currentDate, dateLabel, rub, selected, filter, sort, query, mode,
     onFilter, onSort, onQuery, onMode, onSelect, onAdd } = props;
-  const count = (stage: VehicleStage) => ledger.cars.filter(car => vehicleStage(car) === stage).length;
   const filters = [
     ["all", "Все", ledger.cars.length],
     ["active", "В работе", summary.active],
-    ...stages.map(stage => [stage, stageNames[stage], count(stage)] as const),
   ] as const;
   const detailed = mode === "accounts";
 
@@ -120,12 +127,12 @@ export function VehicleRegistry(props: RegistryProps) {
         </button>
       </div>
     </div>
-    <div className="stage-filters" role="group" aria-label="Этапы продажи">
-      {filters.map(([value, label, amount]) => <button key={value} aria-pressed={filter === value}
+    <div className="stage-filters" role="group" aria-label="Охват реестра">
+      {filters.map(([value, label, amount]) => <button key={value} type="button" aria-pressed={filter === value}
         className={"phase-filter" + (filter === value ? " current" : "")} onClick={() => onFilter(value)}>
-        {value !== "all" && value !== "active" && <i aria-hidden="true" className={"phase-dot " + value}/>}
         <span>{label}</span><b>{amount}</b>
       </button>)}
+      {filter !== "all" && filter !== "active" && <span className="registry-stage"><StageLabel stage={filter}/></span>}
     </div>
     <div className="registry-tools">
       <label className="search"><Search size={17}/><input type="search" value={query} onChange={event => onQuery(event.target.value)}
@@ -153,13 +160,13 @@ export function VehicleRegistry(props: RegistryProps) {
               <th scope="col" className="num profit-cell">Прибыль</th>
             </>}
           </tr></thead>
-          <tbody>{cars.map((car, index) => {
+          <tbody>{cars.map(car => {
             const calc = figures(car);
             const snapshot = summary.timeline.get(car.id);
             return <tr key={car.id} className={car.id === selected ? "selected-row" : undefined} onClick={() => onSelect(car.id)}>
               <td><button className="vehicle" aria-current={car.id === selected ? "true" : undefined}
                 onClick={event => { event.stopPropagation(); onSelect(car.id); }}>
-                <span className={"vehicle-icon tone-" + (index % 4)}><CarFront size={18}/></span>
+                <span className="vehicle-icon"><CarFront size={18} aria-hidden="true"/></span>
                 <span><b>{car.name}</b><small>{rowDescription(car, props)}</small></span>
               </button></td>
               <td><StageLabel stage={vehicleStage(car)}/></td>
@@ -189,6 +196,8 @@ export function VehicleRegistry(props: RegistryProps) {
       <div className="mobile-cars">{cars.map(car => {
         const calc = figures(car);
         const paid = summary.timeline.get(car.id);
+        const advertised = car.price === null && car.askingPrice !== undefined;
+        const salePrice = car.price ?? car.askingPrice;
         return <button key={car.id} className="mobile-car" onClick={() => onSelect(car.id)}>
           <span className="mobile-car-top"><span className="vehicle"><CarFront size={18}/><span>
             <b>{car.name}</b><small>{rowDescription(car, props)}</small>
@@ -198,7 +207,9 @@ export function VehicleRegistry(props: RegistryProps) {
           </span>}
           <span className="mobile-car-bottom">
             <span><small>{detailed ? "Покупка" : "Вложено"}</small><b>{rub(detailed ? car.buy : calc.invested)}</b></span>
-            <span><small>{detailed ? "Расходы" : "Продажа"}</small><b>{detailed ? rub(calc.expenses) : car.price === null ? "—" : rub(car.price)}</b></span>
+            <span><small>{detailed ? "Расходы" : advertised ? "Объявление" : "Продажа"}</small>
+              <b>{detailed ? rub(calc.expenses) : salePrice === undefined ? "—" : rub(salePrice)}</b>
+            </span>
             <span><small>Прибыль</small><b className={tone(calc.net)}>{profitText(calc.net, rub)}</b></span>
           </span>
           {detailed && paid && <span className="mobile-account-balances">
