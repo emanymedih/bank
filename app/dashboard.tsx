@@ -96,7 +96,7 @@ function exportLedger(ledger: Ledger, through: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signedIn: boolean; signInUrl: string; sellerScope?: string }) {
+export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle, userName }: { signedIn: boolean; signInUrl: string; sellerScope?: string; bookTitle?: string; userName?: string }) {
   const [ledger, setLedger] = useState(signedIn ? emptyLedger : initialLedger);
   const [revision, setRevision] = useState(0);
   const [loaded, setLoaded] = useState(!signedIn);
@@ -163,7 +163,6 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
     setActions(false);
   };
   const changeView = (next: View) => { setView(next); select(null); };
-  const requireSignIn = () => window.top?.location.assign(signInUrl);
 
   async function save(next: Ledger, message: string) {
     if (writeLock.current || !loaded) return false;
@@ -319,10 +318,14 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
           aria-current={view === id ? "page" : undefined} onClick={() => changeView(id)}><Icon size={19}/><span>{sectionNames[id]}</span></button>)}
       </nav>
       <div className="sidebar-bottom">
+        {signedIn && <div className="book-panel">
+          {bookTitle && <div className="book-title" title={bookTitle}>{bookTitle}</div>}
+          <a className="button secondary" href="/account">Кабинет{userName ? ` · ${userName}` : ""}</a>
+        </div>}
         {(demo || !signedIn) && <div className="demo-panel">
           <div className="demo-heading"><span className="demo-dot"/>Демо-данные</div>
           <p>{signedIn ? "В книге есть примеры сделок." : "Изменения действуют до перезагрузки."}</p>
-          {signedIn ? <button onClick={clearDemo} disabled={!loaded}>Удалить примеры</button> : <button onClick={requireSignIn}>Войти через ChatGPT</button>}
+          {signedIn ? <button onClick={clearDemo} disabled={!loaded}>Удалить примеры</button> : <a className="button primary" href={signInUrl}>Войти</a>}
         </div>}
       </div>
     </aside>

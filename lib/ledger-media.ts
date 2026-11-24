@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import type { Ledger } from "../app/ledger";
 
-export const photoKey = (userId: string, photoId: string) => "cars/" + encodeURIComponent(userId) + "/" + photoId;
+export const photoKey = (scopeId: string, photoId: string) => "cars/" + encodeURIComponent(scopeId) + "/" + photoId;
 export const getPhotoBucket = () => env.BUCKET;
 
 export function removedPhotos(previous: Ledger, next: Ledger) {

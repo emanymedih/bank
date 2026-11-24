@@ -2,7 +2,7 @@ import { getPhotoBucket, hasOnlyStoredPhotos, photoKey, removedPhotos } from "..
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ledgers } from "../../../db/schema";
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { getCurrentBook, getSessionUser } from "../../auth";
 import { emptyLedger, maxLedgerBytes, parseLedger, readStoredLedger } from "../../ledger";
 
 export const dynamic = "force-dynamic";
@@ -12,18 +12,23 @@ const reply = (body: unknown, status = 200) => Response.json(body, { status, hea
 const unreadable = () => reply({ error: "Не удалось прочитать сохранённую книгу учёта." }, 500);
 
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (!user) return reply({ error: "Войдите, чтобы открыть свой учёт." }, 401);
+  const book = await getCurrentBook();
+  if (!book) return reply({ ledger: emptyLedger, revision: 0 });
   const db = getDb();
-  const [saved] = await db.select().from(ledgers).where(eq(ledgers.userId, user.userId));
+  const [saved] = await db.select().from(ledgers).where(eq(ledgers.bookId, book.bookId));
   if (!saved) return reply({ ledger: emptyLedger, revision: 0 });
   const ledger = readStoredLedger(saved.data);
   return ledger ? reply({ ledger, revision: saved.revision }) : unreadable();
 }
 
 export async function PUT(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (!user) return reply({ error: "Сеанс завершён. Войдите снова." }, 401);
+  const book = await getCurrentBook();
+  if (!book) return reply({ error: "Выберите книгу учёта." }, 404);
+  if (book.role === "viewer") return reply({ error: "Наблюдатель не может сохранять книгу." }, 403);
   if (request.headers.get("sec-fetch-site") === "cross-site") {
     return reply({ error: "Откройте приложение и повторите действие." }, 403);
   }
@@ -40,7 +45,7 @@ export async function PUT(request: Request) {
   }
 
   const db = getDb();
-  const [previous] = data.revision === 0 ? [] : await db.select().from(ledgers).where(eq(ledgers.userId, user.userId));
+  const [previous] = data.revision === 0 ? [] : await db.select().from(ledgers).where(eq(ledgers.bookId, book.bookId));
   if (previous && previous.revision !== data.revision) {
     return reply({ error: "Книга обновилась в другой вкладке или на другом устройстве.", conflict: true }, 409);
   }
@@ -61,15 +66,15 @@ export async function PUT(request: Request) {
   const revision = data.revision + 1;
   const serialized = JSON.stringify(ledger);
   const changed = data.revision === 0
-    ? await db.insert(ledgers).values({ userId: user.userId, data: serialized, revision })
+    ? await db.insert(ledgers).values({ bookId: book.bookId, data: serialized, revision })
       .onConflictDoNothing().returning({ revision: ledgers.revision })
     : await db.update(ledgers).set({ data: serialized, revision })
-      .where(and(eq(ledgers.userId, user.userId), eq(ledgers.revision, data.revision)))
+      .where(and(eq(ledgers.bookId, book.bookId), eq(ledgers.revision, data.revision)))
       .returning({ revision: ledgers.revision });
 
   if (!changed.length) return reply({ error: "Книга обновилась в другой вкладке или на другом устройстве.", conflict: true }, 409);
   if (previousLedger) {
-    const keys = removedPhotos(previousLedger, ledger).map(id => photoKey(user.userId, id));
+    const keys = removedPhotos(previousLedger, ledger).map(id => photoKey(book.bookId, id));
     const bucket = getPhotoBucket();
     if (keys.length && bucket) await bucket.delete(keys).catch(() => {});
   }

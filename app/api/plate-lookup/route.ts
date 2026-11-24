@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { z } from "zod";
 import { formatRussianPlate } from "../../../lib/license-plate";
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { getSessionUser } from "../../auth";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -19,13 +19,13 @@ const providerResponse = z.object({
 });
 
 export async function GET() {
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (!user) return reply({ available: false }, 401);
   return reply({ available: Boolean(env.AVTO_VIN_COD_TOKEN) });
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (!user) return reply({ status: "sign_in" }, 401);
   if (request.headers.get("sec-fetch-site") === "cross-site") return reply({ status: "unavailable" }, 403);
   const token = env.AVTO_VIN_COD_TOKEN;

@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { ledgers } from "../../../../db/schema";
 import { getPhotoBucket, photoKey } from "../../../../lib/ledger-media";
-import { getChatGPTUser } from "../../../chatgpt-auth";
+import { getCurrentBook, getSessionUser } from "../../../auth";
 import { ledgerClientVersion, maxCarPhotos, maxLedgerBytes, maxPhotoBytes, maxPhotosPerUpload, parseLedger, readStoredLedger } from "../../../ledger";
 import type { CarPhoto } from "../../../ledger";
 
@@ -12,21 +12,23 @@ type Context = { params: Promise<{ carId: string }> };
 const headers = { "Cache-Control": "private, no-store" };
 const reply = (body: unknown, status = 200) => Response.json(body, { status, headers });
 
-async function readLedger(userId: string) {
-  const [saved] = await getDb().select().from(ledgers).where(eq(ledgers.userId, userId));
+async function readLedger(bookId: string) {
+  const [saved] = await getDb().select().from(ledgers).where(eq(ledgers.bookId, bookId));
   return saved ? { ledger: readStoredLedger(saved.data), revision: saved.revision } : null;
 }
 
 export async function GET(request: Request, context: Context) {
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (!user) return reply({ error: "Войдите, чтобы открыть фотографии." }, 401);
+  const book = await getCurrentBook();
+  if (!book) return reply({ error: "Выберите книгу учёта." }, 404);
   const { carId } = await context.params;
   const photoId = new URL(request.url).searchParams.get("id");
-  const saved = await readLedger(user.userId);
+  const saved = await readLedger(book.bookId);
   if (saved && !saved.ledger) return reply({ error: "Не удалось прочитать сохранённую книгу учёта." }, 500);
   const photo = saved?.ledger?.cars.find(car => car.id === carId)?.photos?.find(photo => photo.id === photoId);
   if (!photo) return reply({ error: "Фотография не найдена." }, 404);
-  const stored = await getPhotoBucket()?.get(photoKey(user.userId, photo.id));
+  const stored = await getPhotoBucket()?.get(photoKey(book.bookId, photo.id));
   if (!stored) return reply({ error: "Файл фотографии недоступен." }, 404);
   return new Response(stored.body, { headers: {
     ...headers, "Content-Type": "image/jpeg", "X-Content-Type-Options": "nosniff",
@@ -34,8 +36,11 @@ export async function GET(request: Request, context: Context) {
 }
 
 export async function POST(request: Request, context: Context) {
-  const user = await getChatGPTUser();
+  const user = await getSessionUser();
   if (!user) return reply({ error: "Войдите, чтобы добавить фотографии." }, 401);
+  const book = await getCurrentBook();
+  if (!book) return reply({ error: "Выберите книгу учёта." }, 404);
+  if (book.role === "viewer") return reply({ error: "Наблюдатель не может загружать фотографии." }, 403);
   if (request.headers.get("sec-fetch-site") === "cross-site") return reply({ error: "Откройте карточку автомобиля." }, 403);
   if (Number(request.headers.get("content-length") ?? "0") > maxPhotosPerUpload * maxPhotoBytes + 64_000) {
     return reply({ error: "Слишком большой объём фотографий для одной загрузки." }, 413);
@@ -43,7 +48,7 @@ export async function POST(request: Request, context: Context) {
   const bucket = getPhotoBucket();
   if (!bucket) return reply({ error: "Хранилище фотографий пока недоступно." }, 503);
   const { carId } = await context.params;
-  const saved = await readLedger(user.userId);
+  const saved = await readLedger(book.bookId);
   if (saved && !saved.ledger) return reply({ error: "Не удалось прочитать сохранённую книгу учёта." }, 500);
   const car = saved?.ledger?.cars.find(item => item.id === carId);
   if (!saved?.ledger || !car) return reply({ error: "Карточка автомобиля не найдена." }, 404);
@@ -82,7 +87,7 @@ export async function POST(request: Request, context: Context) {
     return reply({ error: "Превышен размер книги учёта." }, 413);
   }
   const data = JSON.stringify(next);
-  const keys = pictures.map(({ photo }) => photoKey(user.userId, photo.id));
+  const keys = pictures.map(({ photo }) => photoKey(book.bookId, photo.id));
   let cleanable = true;
   try {
     for (const [index, { file }] of pictures.entries()) {
@@ -90,7 +95,7 @@ export async function POST(request: Request, context: Context) {
     }
     cleanable = false;
     const updated = await getDb().update(ledgers).set({ data, revision: nextBook.revision })
-      .where(and(eq(ledgers.userId, user.userId), eq(ledgers.revision, revision))).returning({ revision: ledgers.revision });
+      .where(and(eq(ledgers.bookId, book.bookId), eq(ledgers.revision, revision))).returning({ revision: ledgers.revision });
     if (!updated.length) {
       cleanable = true;
       return reply({ error: "Книга обновилась. Повторите загрузку.", conflict: true }, 409);
