@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/manrope";
 import "./globals.css";
 import "./workspace.css";
@@ -8,6 +8,8 @@ export const metadata: Metadata = {
   description: "Покупки, расходы, продажи и расчёты с партнёрами.",
   icons: { icon: "/favicon.svg" },
 };
+
+export const viewport: Viewport = { themeColor: "#f3f1e9" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return <html lang="ru"><body>{children}</body></html>;
