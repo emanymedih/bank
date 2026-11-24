@@ -168,13 +168,13 @@ h1 { font-size: clamp(1.5rem, 3.5vw, 1.75rem); font-weight: 800; letter-spacing:
 .icon-button:hover { background: #edf3ef; color: var(--brand); }
 .bordered { border-color: var(--line); width: 40px; height: 40px; }
 dialog {
-  border: 0; padding: 0; color: var(--ink); overscroll-behavior: contain; border-radius: 14px;
-  box-shadow: 0 16px 55px #172e2440; background: var(--surface);
+  border: 1px solid var(--line-soft); padding: 0; color: var(--ink); overscroll-behavior: contain; border-radius: 12px;
+  box-shadow: 0 24px 60px -28px rgb(23 45 37 / .45); background: var(--surface);
 }
-dialog::backdrop { background: #142a21a0; }
+dialog::backdrop { background: rgb(20 42 33 / .40); backdrop-filter: blur(2px); }
 .dialog { width: min(560px, calc(100% - 26px)); max-height: calc(100dvh - 28px); }
 .drawer { position: fixed; inset: 0 0 0 auto; margin: 0; border-radius: 14px 0 0 14px; width: min(700px, 100%); max-width: 100%; height: 100dvh; max-height: 100dvh; }
-.drawer::backdrop { background: #142a2173; }
+.drawer::backdrop { background: rgb(20 42 33 / .45); backdrop-filter: blur(2px); }
 .dialog-inner { display: flex; flex-direction: column; min-height: 100%; max-height: calc(100dvh - 28px); }
 .dialog-header {
   position: sticky; z-index: 2; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -214,7 +214,22 @@ dialog::backdrop { background: #142a21a0; }
 .settlement dd { margin: 0; text-align: right; font-weight: 700; white-space: nowrap; }
 .payout { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; display: flex; align-items: center; gap: 7px; font-size: .875rem; cursor: pointer; }
 .payout b { margin-left: auto; color: var(--brand); }
-input[type=checkbox] { accent-color: var(--brand); width: 17px; height: 17px; margin: 0; flex-shrink: 0; }
+input[type=checkbox] {
+  appearance: none; width: 18px; height: 18px; margin: 0; flex-shrink: 0; position: relative;
+  border: 1.5px solid var(--line-strong); border-radius: 4px; background: var(--surface);
+  display: inline-grid; place-content: center; cursor: pointer;
+  transition: background-color var(--control-motion), border-color var(--control-motion);
+}
+input[type=checkbox]::before {
+  content: ""; width: 10px; height: 10px; background: #fff; transform: scale(0);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transition: transform var(--control-motion);
+}
+input[type=checkbox]::after { content: ""; position: absolute; inset: -13px; }
+input[type=checkbox]:checked { background: var(--brand); border-color: var(--brand); }
+input[type=checkbox]:checked::before { transform: scale(1); }
+input[type=checkbox]:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+input[type=checkbox]:disabled { opacity: .5; cursor: wait; }
 .deal-bank { background: #e9f4ed; border-radius: 10px; display: flex; align-items: center; gap: 8px; color: #2b6048; font-size: .875rem; padding: 12px; margin-top: 11px; }
 .deal-bank strong { margin-left: auto; text-align: right; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

@@ -15,7 +15,7 @@
   --surface-soft: #edebe0;
   --radius-pill: 999px;
   --nav-size: 188px;
-  --inspector-size: clamp(420px, 36vw, 555px);
+  --inspector-size: clamp(440px, 44vw, 680px);
   --panel-motion: 240ms cubic-bezier(.18,.76,.26,1);
 }
 body {
@@ -144,9 +144,9 @@ h1 { font-size: 1.75rem; letter-spacing: -.04em; }
 .registry-tools .search input { flex: 1; width: 100%; text-overflow: ellipsis; }
 .registry-tools .sort { flex-shrink: 0; }
 .registry-table-scroll { scrollbar-color: #adc8bb #edeee4; }
-.work-registry .deal-table th, .work-registry .deal-table td { padding: 0 8px; font-variant-numeric: tabular-nums; }
-.work-registry .deal-table th:first-child, .work-registry .deal-table td:first-child { padding-left: 13px; }
-.work-registry .deal-table th:last-child, .work-registry .deal-table td:last-child { padding-right: 13px; }
+.work-registry .deal-table th, .work-registry .deal-table td { padding: 0 12px; font-variant-numeric: tabular-nums; }
+.work-registry .deal-table th:first-child, .work-registry .deal-table td:first-child { padding-left: 16px; }
+.work-registry .deal-table th:last-child, .work-registry .deal-table td:last-child { padding-right: 16px; }
 .work-registry .deal-table thead th { background: #eeefe5; color: #39574c; border-color: #e4e6d9; height: 38px; }
 .work-registry .deal-table tbody td { height: 58px; background: var(--surface); border-color: #edeee4; }
 .work-registry .deal-table tbody tr:hover td { background: #f4f6ec; }
@@ -243,8 +243,8 @@ h1 { font-size: 1.75rem; letter-spacing: -.04em; }
 .desktop-inspector, .drawer .dialog-inner { display: flex; flex-direction: column; }
 .desktop-inspector .dialog-content, .drawer .dialog-content { display: flex; flex-direction: column; flex: 1 0 auto; padding-bottom: 0; }
 .desktop-inspector .dialog-content { padding: 14px 16px 0; }
-.dialog { background: var(--surface); border-radius: 14px; box-shadow: 0 18px 55px #142f2334; }
-.dialog::backdrop, .drawer::backdrop { background: #162f286a; }
+.dialog { background: var(--surface); border-radius: 12px; box-shadow: 0 24px 60px -28px rgb(23 45 37 / .45); }
+.dialog::backdrop, .drawer::backdrop { background: rgb(20 42 33 / .40); backdrop-filter: blur(2px); }
 .dialog-header { background: var(--surface); border-color: var(--line); }
 .drawer[open] { animation: inspector-enter var(--panel-motion) both; }
 .detail-heading { gap: 9px; }
@@ -513,10 +513,10 @@ h1 { font-size: 1.75rem; letter-spacing: -.04em; }
 .inline-confirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--bad); font-size: .875rem; }
 
 /* Визуальный проход по образцу folk / Pipedrive / Close: только оформление, сценарии наши. */
-:root { --line-soft: #e9eae0; }
+:root { --line-soft: #e9eae0; --line-strong: #b3b8ab; }
 .panel { border-color: var(--line-soft); border-radius: 12px; }
-.work-registry .deal-table thead th { background: transparent; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--line); height: 34px; }
-.work-registry .deal-table tbody td { background: transparent; border-color: var(--line-soft); height: 56px; }
+.work-registry .deal-table thead th { background: transparent; color: var(--muted); font-size: .6875rem; text-transform: uppercase; letter-spacing: .08em; border-bottom: 1px solid var(--line); height: 34px; }
+.work-registry .deal-table tbody td { background: transparent; border-color: var(--line-soft); height: 52px; }
 .work-registry .deal-table tbody tr:hover td { background: var(--surface-soft); }
 .work-registry .deal-table tbody tr.selected-row td { background: #eef5da; }
 .stage-board { gap: 8px; }
@@ -547,6 +547,11 @@ h1 { font-size: 1.75rem; letter-spacing: -.04em; }
 .finance-def { display: block; color: var(--muted); font-size: .75rem; font-weight: 400; margin-top: 2px; }
 .cover-toggle button { position: relative; }
 .cover-toggle button::after { content: ""; position: absolute; inset: -10px -1px; }
+
+/* Микс референсов (folk / Pipedrive / Close / shadcn): только стиль поверх наших интерфейсов. */
+.button, .search, .sort, .icon-button, input:not([type=checkbox]), select, textarea { border-radius: 8px; }
+.workspace-main .analytics-metrics .metric { border: 1px solid var(--line-soft); }
+.workspace-main .analytics-metrics .metric:not(.hero) { border-radius: 8px; }
 .drawer .status-line, .desktop-inspector .status-line { margin: 8px 12px 0; }
 @media (max-width: 650px) {
   .link-button { min-height: 44px; }
