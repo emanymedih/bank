@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Download, Printer } from "lucide-react";
-import { contractMoney, contractSections, exportContract } from "./sale-contract";
-import type { ContractParty, SaleContract } from "./sale-contract";
+import { contractMoney, contractSections, exportSaleDocument, parseTransferDate, vehicleTransferSections } from "./sale-contract";
+import type { ContractParty, SaleContract, VehicleTransfer } from "./sale-contract";
 import type { Car } from "./ledger";
 
 const docFields = [
@@ -18,6 +18,7 @@ const partyFields = [
 ] as const;
 
 type SavedSeller = { party: ContractParty; city: string };
+type DocumentView = "form" | "contract" | "transfer-form" | "transfer";
 
 function PartyFields({ role, title, party }: { role: "seller" | "buyer"; title: string; party?: ContractParty }) {
   return <fieldset className="contract-fieldset">
@@ -38,7 +39,8 @@ export function ContractForm({ car, sellerScope, today, busy, onRememberVehicle,
   const [seller, setSeller] = useState<SavedSeller>();
   const [sellerLoaded, setSellerLoaded] = useState(!key);
   const [draft, setDraft] = useState<SaleContract>();
-  const [preview, setPreview] = useState(false);
+  const [transfer, setTransfer] = useState<VehicleTransfer>();
+  const [view, setView] = useState<DocumentView>("form");
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState("");
   const [vehicleOpen, setVehicleOpen] = useState(false);
@@ -102,17 +104,37 @@ export function ContractForm({ car, sellerScope, today, busy, onRememberVehicle,
         city, date: value("date"), price: value("price"), payment: value("payment"), handover: value("handover"),
         conditions: value("conditions"), seller: sellerParty, buyer, vehicle,
       });
-      setPreview(true);
+      setView("contract");
     } finally { setPreparing(false); }
   }
 
-  async function send(print: boolean) {
-    if (!draft || preparing) return;
+  function show(next: DocumentView) {
+    setError("");
+    setView(next);
+  }
+
+  function prepareTransfer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const value = (name: string) => String(form.get(name) ?? "").trim();
+    const place = value("place");
+    if (!place) { setError("Укажите место передачи автомобиля."); return; }
+    const date = parseTransferDate(value("date"));
+    if (!date) { setError("Укажите дату передачи с четырёхзначным годом."); return; }
+    setTransfer({
+      place, date, mileage: String(Number(value("mileage"))),
+      keys: value("keys"), documents: value("documents"), notes: value("notes"),
+    });
+    show("transfer");
+  }
+
+  async function send(content: ReturnType<typeof contractSections>, print: boolean) {
+    if (preparing) return;
     const target = print ? window.open("", "_blank") : undefined;
     if (print && !target) { setError("Браузер заблокировал окно печати. Можно скачать PDF и распечатать его."); return; }
     setPreparing(true);
     setError("");
-    try { await exportContract(draft, target ?? undefined); }
+    try { await exportSaleDocument(content, target ?? undefined); }
     catch {
       target?.close();
       setError("Не удалось подготовить документ. Попробуйте скачать PDF ещё раз.");
@@ -120,8 +142,29 @@ export function ContractForm({ car, sellerScope, today, busy, onRememberVehicle,
   }
 
   if (!sellerLoaded) return <p role="status">Загружаем данные продавца…</p>;
-  if (preview && draft) {
-    const content = contractSections(draft);
+  if (view === "transfer-form") return <form onSubmit={prepareTransfer} autoComplete="off">
+    <fieldset className="contract-fieldset">
+      <legend>Акт приёма-передачи</legend>
+      <div className="form-grid">
+        <label className="field">Место передачи<input name="place" maxLength={110} defaultValue={transfer?.place} required/></label>
+        <label className="field">Дата передачи<input name="date" type="date" min="0001-01-01" max="9999-12-31"
+          defaultValue={transfer?.date} required/></label>
+        <label className="field wide">Показание одометра при передаче, км<input name="mileage" type="number" min="0" max="10000000"
+          defaultValue={transfer?.mileage} required/></label>
+        <label className="field wide">Переданные ключи<input name="keys" maxLength={160} defaultValue={transfer?.keys}/></label>
+        <label className="field wide">Переданные документы<input name="documents" maxLength={300} defaultValue={transfer?.documents}/></label>
+        <label className="field wide">Замечания при передаче<textarea name="notes" rows={2} maxLength={550} defaultValue={transfer?.notes}/></label>
+      </div>
+    </fieldset>
+    {error && <p className="form-error" role="alert">{error}</p>}
+    <div className="form-footer">
+      <button type="button" className="button secondary" onClick={() => show("contract")}>К договору</button>
+      <button type="submit" className="button primary">Проверить акт</button>
+    </div>
+  </form>;
+  if (view !== "form" && draft) {
+    const isTransfer = view === "transfer";
+    const content = isTransfer && transfer ? vehicleTransferSections(draft, transfer) : contractSections(draft);
     return <>
       <article className="contract-preview">
         <h3>{content.heading}</h3><p>{content.where}</p>
@@ -133,9 +176,15 @@ export function ContractForm({ car, sellerScope, today, busy, onRememberVehicle,
       </article>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="form-footer contract-footer">
-        <button type="button" className="button secondary" disabled={preparing} onClick={() => { setPreview(false); setError(""); }}>Редактировать</button>
-        <button type="button" className="button secondary" disabled={preparing} onClick={() => void send(false)}><Download size={17}/>Скачать PDF</button>
-        <button type="button" className="button primary" disabled={preparing} onClick={() => void send(true)}><Printer size={17}/>Печать</button>
+        {isTransfer ? <>
+          <button type="button" className="button secondary" disabled={preparing} onClick={() => show("contract")}>К договору</button>
+          <button type="button" className="button secondary" disabled={preparing} onClick={() => show("transfer-form")}>Редактировать акт</button>
+        </> : <>
+          <button type="button" className="button secondary" disabled={preparing} onClick={() => show("form")}>Редактировать</button>
+          <button type="button" className="button secondary" disabled={preparing} onClick={() => show("transfer-form")}>Подготовить акт</button>
+        </>}
+        <button type="button" className="button secondary" disabled={preparing} onClick={() => void send(content, false)}><Download size={17}/>Скачать PDF</button>
+        <button type="button" className="button primary" disabled={preparing} onClick={() => void send(content, true)}><Printer size={17}/>Печать</button>
       </div>
     </>;
   }
@@ -166,7 +215,7 @@ export function ContractForm({ car, sellerScope, today, busy, onRememberVehicle,
     {key && <label className="option-check"><input type="checkbox" checked={remember}
       onChange={event => setRemember(event.target.checked)}/>Запомнить продавца на этом устройстве</label>}
     <PartyFields role="buyer" title="Покупатель" party={draft?.buyer}/>
-    <p className="contract-intro">Данные покупателя используются только в этом документе.</p>
+    <p className="contract-intro">Данные покупателя используются только для подготовки договора и акта.</p>
     <fieldset className="contract-fieldset">
       <legend>Оплата и передача</legend>
       <div className="form-grid">

@@ -13,15 +13,17 @@ const expense = z.object({
   id, name: z.string().trim().min(1).max(90), date: day, amount: money.positive(),
   payer: id.nullable(), category: z.enum(expenseCategories).optional(),
 });
+const profitPayout = z.object({ id, amount: money.positive(), date: day, fromCash: z.boolean() });
 const share = z.object({
   partner: id, buy: money, weight: z.number().int().min(0).max(10_000), withdrawn: z.boolean(),
-  cashWithdrawalDate: day.optional(),
+  cashWithdrawalDate: day.optional(), payouts: z.array(profitPayout).max(100).optional(),
 });
 export const photoPhases = ["before", "work", "after"] as const;
 export const maxCarPhotos = 64;
 export const maxPhotoBytes = 1_200_000;
 export const maxPhotosPerUpload = 8;
 export const maxLedgerBytes = 750_000;
+export const ledgerClientVersion = 2;
 
 const workEntry = z.object({
   id, name: z.string().trim().min(1).max(100), date: day, notes: z.string().trim().max(750),
@@ -41,6 +43,9 @@ const carPart = z.object({
   acquired: z.boolean(),
 });
 export const vehicleStages = ["purchased", "preparation", "listed"] as const;
+export const stageHistoryEntry = z.object({
+  stage: z.enum(vehicleStages), date: day, source: z.literal("purchase").optional(),
+});
 const detail = z.string().trim().max(120).optional();
 const vehicleDocuments = z.object({
   color: detail, type: detail, body: detail, chassis: detail, engine: detail,
@@ -54,6 +59,7 @@ const vehicle = z.object({
   bought: day, buy: money.positive(), sold: day.nullable(), price: money.positive().nullable(),
   cashPurchase: z.boolean().optional(), cashSale: z.boolean().optional(),
   stage: z.enum(vehicleStages).optional(),
+  stageHistory: z.array(stageHistoryEntry).optional(),
   nextAction: z.object({ title: z.string().trim().min(1).max(120), due: day.optional() }).optional(),
   askingPrice: money.positive().optional(),
   documents: vehicleDocuments.optional(),
@@ -75,13 +81,15 @@ export type Ledger = z.infer<typeof ledgerSchema>;
 export type Car = z.infer<typeof vehicle>;
 export type Partner = z.infer<typeof partner>;
 export type Expense = z.infer<typeof expense>;
+export type ProfitPayout = z.infer<typeof profitPayout>;
 export type CashEntry = z.infer<typeof cashEntry>;
 export type WorkEntry = z.infer<typeof workEntry>;
 export type CarPhoto = z.infer<typeof carPhoto>;
 export type CarPart = z.infer<typeof carPart>;
 export type PhotoPhase = CarPhoto["phase"];
 export type VehicleDocuments = z.infer<typeof vehicleDocuments>;
-export type VehicleStage = (typeof vehicleStages)[number] | "sold";
+export type ActiveVehicleStage = (typeof vehicleStages)[number];
+export type VehicleStage = ActiveVehicleStage | "sold";
 
 export const stageNames: Record<VehicleStage, string> = {
   purchased: "Куплено", preparation: "Подготовка", listed: "На продаже", sold: "Продано",
@@ -89,6 +97,17 @@ export const stageNames: Record<VehicleStage, string> = {
 
 export function vehicleStage(car: Car): VehicleStage {
   return car.sold ? "sold" : car.stage ?? (car.expenses.length || car.works?.length ? "preparation" : "purchased");
+}
+
+function validStageHistory(car: Car) {
+  const history = car.stageHistory ?? [];
+  if (!history.length) return true;
+  return history.at(-1)?.stage === car.stage && history.every((entry, index) => {
+    const previous = history[index - 1];
+    return entry.date >= car.bought && (!car.sold || entry.date <= car.sold)
+      && (!previous || (previous.date <= entry.date && previous.stage !== entry.stage))
+      && (!entry.source || (index === 0 && entry.stage === "purchased" && entry.date === car.bought));
+  });
 }
 
 function unique(values: string[]) {
@@ -108,6 +127,7 @@ export function parseLedger(value: unknown): Ledger | null {
     const photos = c.photos ?? [];
     return Boolean(c.sold) === Boolean(c.price)
       && (!c.sold || c.sold >= c.bought)
+      && validStageHistory(c)
       && (!c.cashSale || c.sold !== null)
       && c.shares.reduce((sum, s) => sum + s.buy, 0) === (c.cashPurchase ? 0 : c.buy)
       && c.shares.reduce((sum, s) => sum + s.weight, 0) === 10_000
@@ -121,7 +141,11 @@ export function parseLedger(value: unknown): Ledger | null {
       && c.shares.every(s =>
         partnerIds.has(s.partner)
         && (!s.withdrawn || (payout.people[s.partner]?.profit ?? 0) > 0)
-        && (!s.cashWithdrawalDate || (s.withdrawn && c.sold && s.cashWithdrawalDate >= c.sold)))
+        && (!s.cashWithdrawalDate || (s.withdrawn && c.sold && s.cashWithdrawalDate >= c.sold))
+        && (!s.payouts?.length || (!s.withdrawn && c.sold
+          && unique(s.payouts.map(item => item.id))
+          && s.payouts.every(item => item.date >= c.sold!)
+          && payout.people[s.partner].paid <= payout.people[s.partner].profit)))
       && c.expenses.every(e => (e.payer === null || partnerIds.has(e.payer)) && e.date >= c.bought);
   });
   return valid ? parsed.data : null;
@@ -154,17 +178,33 @@ export function figures(car: Car) {
   const expenses = car.expenses.reduce((sum, item) => sum + item.amount, 0);
   const invested = car.buy + expenses;
   const net = car.price === null ? null : car.price - invested;
-  const people = Object.create(null) as Record<string, { buy: number; expenses: number; profit: number; withdrawn: boolean }>;
+  const people = Object.create(null) as Record<string, { buy: number; expenses: number; profit: number; paid: number }>;
   const portions = splitAmount(net ?? 0, car.shares.map(s => s.weight));
   for (const [index, share] of car.shares.entries()) {
-    people[share.partner] = { buy: share.buy, expenses: 0, profit: portions[index], withdrawn: share.withdrawn };
+    const profit = portions[index];
+    const paid = share.withdrawn ? profit : (share.payouts ?? []).reduce((sum, payment) => sum + payment.amount, 0);
+    people[share.partner] = { buy: share.buy, expenses: 0, profit, paid };
   }
   for (const item of car.expenses) {
     if (item.payer === null) continue;
-    people[item.payer] ??= { buy: 0, expenses: 0, profit: 0, withdrawn: false };
+    people[item.payer] ??= { buy: 0, expenses: 0, profit: 0, paid: 0 };
     people[item.payer].expenses += item.amount;
   }
   return { expenses, invested, net, people };
+}
+
+function recordedProfitPayments(car: Car, deal: ReturnType<typeof figures>) {
+  const sold = car.sold;
+  if (!sold) return [];
+  return car.shares.flatMap(share => {
+    const legacyAmount = share.withdrawn ? deal.people[share.partner].profit : 0;
+    if (legacyAmount > 0) {
+      return [{ partner: share.partner, id: "legacy/" + share.partner, amount: legacyAmount,
+        date: share.cashWithdrawalDate ?? sold, fromCash: Boolean(share.cashWithdrawalDate) }];
+    }
+    return (share.payouts ?? []).map(payment => ({ ...payment, partner: share.partner,
+      id: "payment/" + JSON.stringify([share.partner, payment.id]) }));
+  });
 }
 
 export function totals(ledger: Ledger) {
@@ -174,24 +214,35 @@ export function totals(ledger: Ledger) {
   let net = 0;
   let sold = 0;
   let bank = 0;
+  const add = (id: string, amount: number) => { balances[id] += amount; bank += amount; };
+  const deals = [...ledger.cars].sort((a, b) =>
+    (a.sold ?? "9999").localeCompare(b.sold ?? "9999") || a.bought.localeCompare(b.bought) || a.id.localeCompare(b.id))
+    .map(car => {
+      const deal = figures(car);
+      return { car, deal, payments: recordedProfitPayments(car, deal) };
+    });
+  const delayed = deals.flatMap(({ car, payments }) => payments.filter(payment => car.sold && payment.date > car.sold))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  let nextPayment = 0;
 
-  for (const car of [...ledger.cars].sort((a, b) =>
-    (a.sold ?? "9999").localeCompare(b.sold ?? "9999") || a.bought.localeCompare(b.bought) || a.id.localeCompare(b.id))) {
-    const deal = figures(car);
-    if (deal.net === null) {
+  for (const { car, deal, payments } of deals) {
+    if (!car.sold || deal.net === null) {
       invested += deal.invested;
       continue;
     }
     sold++;
     net += deal.net;
-    for (const [id, person] of Object.entries(deal.people)) {
-      if (!person.withdrawn) {
-        balances[id] += person.profit;
-        bank += person.profit;
-      }
+    while (nextPayment < delayed.length && delayed[nextPayment].date <= car.sold) {
+      const { partner, amount } = delayed[nextPayment++];
+      add(partner, -amount);
+    }
+    for (const [id, person] of Object.entries(deal.people)) add(id, person.profit);
+    for (const payment of payments) {
+      if (payment.date === car.sold) add(payment.partner, -payment.amount);
     }
     timeline.set(car.id, { people: { ...balances }, bank });
   }
+  for (const { partner, amount } of delayed.slice(nextPayment)) add(partner, -amount);
 
   return { balances, bank, invested, net, sold, active: ledger.cars.length - sold, timeline };
 }
@@ -253,12 +304,11 @@ export function cashSummary(ledger: Ledger, through: string) {
       }
     }
     const deal = figures(car);
-    for (const share of car.shares) {
-      if (share.withdrawn && share.cashWithdrawalDate && deal.people[share.partner]?.profit > 0) {
-        const name = ledger.partners.find(p => p.id === share.partner)?.name ?? "";
-        linked.push({ id: car.id + "/payout/" + share.partner, carId: car.id, source: "car", date: share.cashWithdrawalDate,
-          name: "Выплата · " + name + " · " + car.name, amount: deal.people[share.partner].profit, direction: "out" });
-      }
+    for (const payment of recordedProfitPayments(car, deal)) {
+      if (!payment.fromCash) continue;
+      const name = ledger.partners.find(p => p.id === payment.partner)?.name ?? "";
+      linked.push({ id: car.id + "/payout/" + payment.id, carId: car.id, source: "car", date: payment.date,
+        name: "Выплата · " + name + " · " + car.name, amount: payment.amount, direction: "out" });
     }
   }
 

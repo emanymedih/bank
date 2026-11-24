@@ -3,7 +3,7 @@ import { getDb } from "../../../../db";
 import { ledgers } from "../../../../db/schema";
 import { getPhotoBucket, photoKey } from "../../../../lib/ledger-media";
 import { getChatGPTUser } from "../../../chatgpt-auth";
-import { maxCarPhotos, maxLedgerBytes, maxPhotoBytes, maxPhotosPerUpload, parseLedger, readStoredLedger } from "../../../ledger";
+import { ledgerClientVersion, maxCarPhotos, maxLedgerBytes, maxPhotoBytes, maxPhotosPerUpload, parseLedger, readStoredLedger } from "../../../ledger";
 import type { CarPhoto } from "../../../ledger";
 
 export const dynamic = "force-dynamic";
@@ -77,7 +77,8 @@ export async function POST(request: Request, context: Context) {
   if (!next) return reply({ error: "Не удалось обновить историю автомобиля." }, 422);
   // The response can become the next whole-book save request.
   const nextBook = { ledger: next, revision: revision + 1 };
-  if (new TextEncoder().encode(JSON.stringify(nextBook)).byteLength > maxLedgerBytes) {
+  const saveBody = JSON.stringify({ ...nextBook, clientVersion: ledgerClientVersion });
+  if (new TextEncoder().encode(saveBody).byteLength > maxLedgerBytes) {
     return reply({ error: "Превышен размер книги учёта." }, 413);
   }
   const data = JSON.stringify(next);
