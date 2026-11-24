@@ -28,11 +28,11 @@ export function FinanceStrip({ cash, retained, invested, rub, onCash }: {
   </dl>;
 }
 
-export function StageBoard({ cars, filter, onFilter }: {
-  cars: Car[]; filter: CarFilter; onFilter: (stage: CarFilter) => void;
+export function StageBoard({ cars, today, filter, onFilter }: {
+  cars: Car[]; today: string; filter: CarFilter; onFilter: (stage: CarFilter) => void;
 }) {
   const counts: Record<VehicleStage, number> = { purchased: 0, preparation: 0, listed: 0, sold: 0 };
-  for (const car of cars) counts[vehicleStage(car)]++;
+  for (const car of cars) if (car.bought <= today) counts[vehicleStage(car, today)]++;
   return <div className="stage-board" role="group" aria-label="Этапы продажи">
     {stages.map(stage => <button key={stage} type="button" className={"stage-card stage-card-" + stage}
       aria-pressed={filter === stage} onClick={() => onFilter(filter === stage ? "all" : stage)}>
@@ -51,7 +51,7 @@ function stepTiming(car: Car, today: string, dateLabel: (value: string) => strin
 export function ActionQueue({ cars, today, dateLabel, onOpen, onPlan }: {
   cars: Car[]; today: string; dateLabel: (value: string) => string; onOpen: (id: string) => void; onPlan: (id: string) => void;
 }) {
-  const active = cars.filter(car => !car.sold);
+  const active = cars.filter(car => car.bought <= today && !car.sold);
   const dated = active.filter(car => car.nextAction).sort((a, b) =>
     (a.nextAction?.due ?? "9999").localeCompare(b.nextAction?.due ?? "9999"));
   const unplanned = active.filter(car => !car.nextAction);
@@ -162,7 +162,7 @@ export function VehicleRegistry(props: RegistryProps) {
             </>}
           </tr></thead>
           <tbody>{cars.map(car => {
-            const calc = figures(car);
+            const calc = figures(car, currentDate);
             const snapshot = summary.timeline.get(car.id);
             return <tr key={car.id} className={car.id === selected ? "selected-row" : undefined} onClick={() => onSelect(car.id)}>
               <td><button className="vehicle" aria-current={car.id === selected ? "true" : undefined}
@@ -170,7 +170,7 @@ export function VehicleRegistry(props: RegistryProps) {
                 <VehicleMark name={car.name} className="vehicle-icon"/>
                 <span><b>{car.name}</b><small>{rowDescription(car, props)}</small></span>
               </button></td>
-              <td><StageLabel stage={vehicleStage(car)}/></td>
+              <td><StageLabel stage={vehicleStage(car, currentDate)}/></td>
               {detailed ? <>
                 <td className="date">{dateLabel(car.bought)}</td><td className="date">{car.sold ? dateLabel(car.sold) : "—"}</td>
                 <td className="num">{rub(car.buy)}</td><td className="num">{rub(calc.expenses)}</td>
@@ -178,7 +178,7 @@ export function VehicleRegistry(props: RegistryProps) {
                 <td className={"num " + tone(calc.net)}>{profitText(calc.net, rub)}</td>
                 {ledger.partners.map(person => <td key={person.id} className="num">{snapshot ? <>
                   {rub(snapshot.people[person.id])}
-                  {calc.people[person.id]?.profit > 0 && <small className="cell-caption">{calc.people[person.id].paid > 0 ? "Выплачено " + rub(calc.people[person.id].paid) : "В банке"}</small>}
+                  {calc.people[person.id]?.profit > 0 && <small className="cell-caption">{calc.people[person.id].paid > 0 ? "Выплачено " + rub(calc.people[person.id].paid) : "Прибыль к выплате"}</small>}
                 </> : "—"}</td>)}
                 <td className="num">{snapshot ? rub(snapshot.bank) : "—"}</td>
               </> : <>
@@ -186,7 +186,7 @@ export function VehicleRegistry(props: RegistryProps) {
                   <b>{car.nextAction.title}</b>
                   {car.nextAction.due && <small className={car.nextAction.due < currentDate ? "negative" : "cell-caption"}>{stepTiming(car, currentDate, dateLabel)}</small>}
                 </> : <span className="muted">—</span>}</td>
-                <td className="num invested-cell">{rub(calc.invested)}</td>
+                <td className="num invested-cell">{car.bought <= currentDate ? rub(calc.invested) : "—"}</td>
                 <td className="num sale-cell">{car.price === null ? car.askingPrice ? <>{rub(car.askingPrice)}<small className="cell-caption">Объявление</small></> : "—" : rub(car.price)}</td>
                 <td className={"num profit-cell " + tone(calc.net)}>{profitText(calc.net, rub)}</td>
               </>}
@@ -195,19 +195,19 @@ export function VehicleRegistry(props: RegistryProps) {
         </table>
       </div>
       <div className="mobile-cars">{cars.map(car => {
-        const calc = figures(car);
+        const calc = figures(car, currentDate);
         const paid = summary.timeline.get(car.id);
         const advertised = car.price === null && car.askingPrice !== undefined;
         const salePrice = car.price ?? car.askingPrice;
         return <button key={car.id} className="mobile-car" onClick={() => onSelect(car.id)}>
           <span className="mobile-car-top"><span className="vehicle"><VehicleMark name={car.name} className="vehicle-icon"/><span>
             <b>{car.name}</b><small>{rowDescription(car, props)}</small>
-          </span></span><StageLabel stage={vehicleStage(car)}/></span>
+          </span></span><StageLabel stage={vehicleStage(car, currentDate)}/></span>
           {!detailed && !car.sold && car.nextAction && <span className="mobile-step">
             <b>{car.nextAction.title}</b><small>{stepTiming(car, currentDate, dateLabel)}</small>
           </span>}
           <span className="mobile-car-bottom">
-            <span><small>{detailed ? "Покупка" : "Вложено"}</small><b>{rub(detailed ? car.buy : calc.invested)}</b></span>
+            <span><small>{detailed ? "Покупка" : "Вложено"}</small><b>{detailed || car.bought <= currentDate ? rub(detailed ? car.buy : calc.invested) : "—"}</b></span>
             <span><small>{detailed ? "Расходы" : advertised ? "Объявление" : "Продажа"}</small>
               <b>{detailed ? rub(calc.expenses) : salePrice === undefined ? "—" : rub(salePrice)}</b>
             </span>

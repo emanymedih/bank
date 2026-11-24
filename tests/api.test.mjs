@@ -295,3 +295,29 @@ test("a purchase posted from shared cash keeps its allocation after reopening an
   assert.deepEqual(await (await disk.as("owner", routes.ledger.GET)).json(), { ledger: posted, revision: 3 });
   assert.deepEqual(await (await disk.as("other", routes.ledger.GET)).json(), { ledger: emptyLedger, revision: 0 });
 });
+
+test("cash contributors and linked part expenses persist, and old tabs cannot erase them", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "avtobank-cash-and-parts-"));
+  const disk = await createRuntime({ path: join(dir, "ledger.sqlite") });
+  t.after(async () => { disk.close(); await rm(dir, { recursive: true, force: true }); });
+  const actual = { id: "paid-part", name: "Диски", amount: 1_840_000, date: "2026-10-02", payer: null };
+  const car = makeCar({ expenses: [actual], parts: [
+    { id: "disk", name: "Диски, 2 шт.", article: "A-21", plannedPrice: 1_860_000, acquired: true, expenseId: actual.id },
+  ] });
+  const entry = { id: "opening", name: "Начальный остаток", amount: 186_000_000, direction: "in", date: "2026-10-01",
+    allocations: [{ partner: alice.id, amount: 100_000_000 }] };
+  const ledger = { ...makeLedger(car), cashEntries: [entry] };
+  const save = (book, revision, client = ledgerClientVersion) => disk.as("owner", () => routes.ledger.PUT(ledgerRequest(book, revision, {}, client)));
+  for (const parts of [[{ ...car.parts[0], expenseId: "unknown" }], [car.parts[0], { ...car.parts[0], id: "duplicate" }]]) {
+    assert.equal((await save({ ...ledger, cars: [{ ...car, parts }] }, 0)).status, 422);
+  }
+  assert.equal((await save(ledger, 0)).status, 200);
+  disk.reopen();
+  const stale = await save(makeLedger(car), 0);
+  assert.equal(stale.status, 409);
+  const old = await save(makeLedger(makeCar()), 1, 3);
+  assert.equal(old.status, 409);
+  assert.match((await old.json()).error, /Обновите страницу/);
+  assert.deepEqual(await (await disk.as("owner", routes.ledger.GET)).json(), { ledger, revision: 1 });
+  assert.deepEqual(await (await disk.as("other", routes.ledger.GET)).json(), { ledger: emptyLedger, revision: 0 });
+});

@@ -64,8 +64,9 @@ test("profit stays with its partner until a dated future cash payout comes due",
   });
   const ledger = makeLedger(sold);
   assert(validLedger(ledger));
-  assert.deepEqual(fundingSnapshot(ledger, through).balances, { [alice.id]: 11_900_000, [bob.id]: 0 });
-  assert.deepEqual(fundingSnapshot(ledger, "2026-11-24").balances, { [alice.id]: 0, [bob.id]: 0 });
+  assert.deepEqual(fundingSnapshot(ledger, through).balances, { [alice.id]: 15_000_000, [bob.id]: 3_100_000 });
+  assert.deepEqual(fundingSnapshot(ledger, "2026-11-24").balances, { [alice.id]: 3_100_000, [bob.id]: 3_100_000 });
+  assert.deepEqual(fundingSnapshot(ledger, "2026-11-25").balances, { [alice.id]: 0, [bob.id]: 0 });
   assert.equal(cashSummary(ledger, "2026-11-24").spending, 11_900_000);
   assert.equal(fundingSnapshot(ledger, through).total, 0);
 });
@@ -84,6 +85,7 @@ test("purchase percentages conserve 100 percent at two decimals", () => {
   assert.deepEqual(purchaseContributionWeights([1, 0]), [10000, 0]);
   assert.deepEqual(purchaseContributionWeights([0, 0]), [5000, 5000]);
   assert.deepEqual(purchaseContributionWeights([99_999_999_999, 1]), [10000, 0]);
+  assert.deepEqual(purchaseContributionWeights([1_000_000_000_000_001, 1_000_000_000_000_001, 1_000_000_000_000_001]), [3334, 3333, 3333]);
 });
 
 test("proportional profit and loss agree with a manual calculation while purchase funding stays exact", () => {
