@@ -14,6 +14,7 @@ const expense = z.object({
   payer: id.nullable(), category: z.enum(expenseCategories).optional(),
 });
 const profitPayout = z.object({ id, amount: money.positive(), date: day, fromCash: z.boolean() });
+// With a cash purchase, buy attributes shared capital and creates no personal reimbursement.
 const share = z.object({
   partner: id, buy: money, weight: z.number().int().min(0).max(10_000), withdrawn: z.boolean(),
   cashWithdrawalDate: day.optional(), payouts: z.array(profitPayout).max(100).optional(),
@@ -23,7 +24,7 @@ export const maxCarPhotos = 64;
 export const maxPhotoBytes = 1_200_000;
 export const maxPhotosPerUpload = 8;
 export const maxLedgerBytes = 750_000;
-export const ledgerClientVersion = 2;
+export const ledgerClientVersion = 3;
 
 const workEntry = z.object({
   id, name: z.string().trim().min(1).max(100), date: day, notes: z.string().trim().max(750),
@@ -123,13 +124,14 @@ export function parseLedger(value: unknown): Ledger | null {
     && unique((cashEntries ?? []).map(entry => entry.id))
     && unique(cars.map(c => c.id)) && cars.every(c => {
     const payout = figures(c);
+    const attributedPurchase = c.shares.reduce((sum, share) => sum + share.buy, 0);
     const workIds = new Set(c.works?.map(work => work.id));
     const photos = c.photos ?? [];
     return Boolean(c.sold) === Boolean(c.price)
       && (!c.sold || c.sold >= c.bought)
       && validStageHistory(c)
       && (!c.cashSale || c.sold !== null)
-      && c.shares.reduce((sum, s) => sum + s.buy, 0) === (c.cashPurchase ? 0 : c.buy)
+      && (attributedPurchase === c.buy || (c.cashPurchase && attributedPurchase === 0))
       && c.shares.reduce((sum, s) => sum + s.weight, 0) === 10_000
       && unique(c.shares.map(s => s.partner))
       && unique(c.expenses.map(e => e.id))
@@ -183,7 +185,7 @@ export function figures(car: Car) {
   for (const [index, share] of car.shares.entries()) {
     const profit = portions[index];
     const paid = share.withdrawn ? profit : (share.payouts ?? []).reduce((sum, payment) => sum + payment.amount, 0);
-    people[share.partner] = { buy: share.buy, expenses: 0, profit, paid };
+    people[share.partner] = { buy: car.cashPurchase ? 0 : share.buy, expenses: 0, profit, paid };
   }
   for (const item of car.expenses) {
     if (item.payer === null) continue;

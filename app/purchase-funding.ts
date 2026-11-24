@@ -40,7 +40,7 @@ export type FundingSource = ReturnType<typeof fundingSources>[number];
 
 export function carFunding(car: Car, through: string) {
   const purchase = new Map<string | null, number>();
-  if (car.cashPurchase) purchase.set(null, car.buy);
+  if (car.cashPurchase && !car.shares.some(share => share.buy > 0)) purchase.set(null, car.buy);
   else for (const share of car.shares) purchase.set(share.partner, share.buy);
 
   const invested = new Map(purchase);

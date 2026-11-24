@@ -46,10 +46,11 @@ export async function PUT(request: Request) {
   }
   const previousLedger = previous ? readStoredLedger(previous.data) : undefined;
   if (previousLedger === null) return unreadable();
-  // Older tabs may omit the new fields when rebuilding a vehicle form.
+  // Older editors cannot round-trip some records when rebuilding a vehicle form.
   if (data.clientVersion !== ledgerClientVersion && previousLedger?.cars.some(car =>
-    car.stageHistory?.length || car.shares.some(share => share.payouts?.length))) {
-    return reply({ error: "Обновите страницу перед сохранением. В книге уже есть история этапов или новые выплаты." }, 409);
+    (car.cashPurchase && car.shares.some(share => share.buy > 0)) ||
+    (data.clientVersion !== 2 && (car.stageHistory?.length || car.shares.some(share => share.payouts?.length))))) {
+    return reply({ error: "Обновите страницу перед сохранением. В книге есть данные, которые эта вкладка не поддерживает." }, 409);
   }
   if (!hasOnlyStoredPhotos(previousLedger, ledger)) return reply({ error: "Фотографии нужно загрузить через карточку автомобиля." }, 422);
 

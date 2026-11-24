@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Camera, CarFront, Check, ChevronRight, ListChecks, ReceiptText, Wrench, X } from "lucide-react";
+import { Camera, Check, ChevronRight, ListChecks, ReceiptText, Wrench, X } from "lucide-react";
+import { VehicleMark } from "./vehicle-mark";
 import { stageNames } from "./ledger";
 import type { Car, CarPhoto, Expense, WorkEntry } from "./ledger";
 
@@ -66,7 +67,7 @@ type Event =
   | { id: string; type: "expense"; date: string; name: string; amount: number; expense: Expense }
   | { id: string; type: "work"; date: string; name: string; amount: number | null; work: WorkEntry; expense?: Expense };
 
-const icons = { purchase: CarFront, sale: Check, stage: ListChecks, expense: ReceiptText, work: Wrench };
+const icons = { sale: Check, stage: ListChecks, expense: ReceiptText, work: Wrench };
 const eventLabels = { purchase: "Покупка", sale: "Продажа", stage: "Этап", expense: "Расход", work: "Работа" };
 
 export function vehicleEvents(car: Car): Event[] {
@@ -93,23 +94,28 @@ export function vehicleEvents(car: Car): Event[] {
     Number(a.type === "purchase") - Number(b.type === "purchase"));
 }
 
-export function VehicleTimeline({ car, dateLabel, rub, onExpense, onWork, onPhotos }: {
+export function VehicleTimeline({ car, dateLabel, rub, onExpense, onWork, onPhotos, onCashPurchase }: {
   car: Car; dateLabel: (date: string) => string; rub: (amount: number) => string;
-  onExpense: (id: string) => void; onWork: (id: string) => void; onPhotos: () => void;
+  onExpense: (id: string) => void; onWork: (id: string) => void; onPhotos: () => void; onCashPurchase?: () => void;
 }) {
   const events = vehicleEvents(car);
   return <section className="vehicle-timeline" aria-labelledby="vehicle-timeline-title">
     <h3 id="vehicle-timeline-title">Лента автомобиля</h3>
     <ol>{events.map(event => {
-      const Icon = icons[event.type];
+      const Icon = event.type === "purchase" ? null : icons[event.type];
       const photos = event.type === "work" ? car.photos?.filter(photo => photo.workId === event.work.id).length ?? 0 : 0;
       return <li key={event.id}>
-        <span className={"timeline-icon event-" + event.type}><Icon size={16}/></span>
+        {Icon ? <span className={"timeline-icon event-" + event.type} aria-hidden="true"><Icon size={16}/></span>
+          : <VehicleMark name={car.name} className="timeline-icon event-purchase"/>}
         <div className="event-content">
           <small><time dateTime={event.date}>{dateLabel(event.date)}</time> · {eventLabels[event.type]}</small>
           {event.type === "work" ? <button type="button" className="event-name" onClick={() => onWork(event.work.id)}>{event.name}</button>
           : event.type === "expense" ? <button type="button" className="event-name" onClick={() => onExpense(event.expense.id)}>{event.name}</button>
           : <b>{event.name}</b>}
+          {event.type === "purchase" && <div className="event-links purchase-event-source">
+            <small>{car.cashPurchase ? "Из общей кассы" : "Из личных средств"}</small>
+            {onCashPurchase && <button type="button" className="text-button" onClick={onCashPurchase}>Учесть в кассе</button>}
+          </div>}
           {event.type === "work" && (event.expense || photos > 0) && <div className="event-links">
             {event.expense && <button type="button" className="text-button" onClick={() => onExpense(event.expense!.id)}>Связанный расход</button>}
             {photos > 0 && <button type="button" className="text-button" onClick={onPhotos}><Camera size={14}/>Фото · {photos}</button>}

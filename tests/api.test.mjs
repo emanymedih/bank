@@ -275,3 +275,23 @@ test("stage history, batch costs and partial payments survive a real SQLite save
   const latest = await disk.as("owner", () => routes.ledger.PUT(ledgerRequest(initial, 2, {}, ledgerClientVersion)));
   assert.deepEqual(await latest.json(), { revision: 3 });
 });
+
+test("a purchase posted from shared cash keeps its allocation after reopening and rejects a v2 overwrite", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "avtobank-cash-allocation-"));
+  const disk = await createRuntime({ path: join(dir, "ledger.sqlite") });
+  t.after(async () => { disk.close(); await rm(dir, { recursive: true, force: true }); });
+  const individual = makeCar({ stage: "purchased", stageHistory: [{ stage: "purchased", date: "2026-10-01", source: "purchase" }] });
+  const personalBook = makeLedger(individual);
+  assert.equal((await disk.as("owner", () => routes.ledger.PUT(ledgerRequest(personalBook, 0, {}, 2)))).status, 200);
+  assert.equal((await disk.as("owner", () => routes.ledger.PUT(ledgerRequest(personalBook, 1, {}, 2)))).status, 200);
+  const purchase = { ...individual, cashPurchase: true };
+  const posted = makeLedger(purchase);
+  assert.equal((await disk.as("owner", () => routes.ledger.PUT(ledgerRequest(posted, 2, {}, ledgerClientVersion)))).status, 200);
+  disk.reopen();
+  const oldBook = makeLedger({ ...purchase, shares: purchase.shares.map(share => ({ ...share, buy: 0 })) });
+  const outdated = await disk.as("owner", () => routes.ledger.PUT(ledgerRequest(oldBook, 3, {}, 2)));
+  assert.equal(outdated.status, 409);
+  assert.match((await outdated.json()).error, /Обновите страницу/);
+  assert.deepEqual(await (await disk.as("owner", routes.ledger.GET)).json(), { ledger: posted, revision: 3 });
+  assert.deepEqual(await (await disk.as("other", routes.ledger.GET)).json(), { ledger: emptyLedger, revision: 0 });
+});
