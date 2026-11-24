@@ -143,7 +143,10 @@ export function Cabinet({ initialName, initialPhone }: { initialName: string; in
           <button className="button primary" type="submit" disabled={busy}>Пригласить</button>
         </form>}
         {inviteUrl && <p className="auth-note invite-link">Ссылка-приглашение: <a href={inviteUrl}>{inviteUrl}</a>
-          <button className="button secondary" type="button" onClick={() => { void navigator.clipboard?.writeText(inviteUrl); setNotice("Ссылка скопирована."); }}>Копировать</button>
+          <button className="button secondary" type="button" onClick={() => { void (async () => {
+            try { await navigator.clipboard.writeText(inviteUrl); setNotice("Ссылка скопирована."); }
+            catch { setNotice("Не удалось скопировать автоматически — выделите ссылку и скопируйте вручную."); }
+          })(); }}>Копировать</button>
         </p>}
         {isOwner && <p className="auth-footnote">Участник входит под своим номером и принимает приглашение по ссылке. Партнёры в сделках и участники книги — разные списки: связать их можно в разделе «Мои партнёры».</p>}
       </section>

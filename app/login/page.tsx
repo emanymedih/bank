@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
+import { safeReturnTo } from "../../lib/safe-return-to";
 
 type Mode = "login" | "register" | "reset";
 const titles: Record<Mode, string> = { login: "Вход", register: "Регистрация", reset: "Сброс пароля" };
@@ -19,7 +20,7 @@ export default function LoginPage() {
 
 function LoginForm() {
   const params = useSearchParams();
-  const returnTo = (params.get("return_to") ?? "/").startsWith("/") ? params.get("return_to") ?? "/" : "/";
+  const returnTo = safeReturnTo(params.get("return_to"));
   const [mode, setMode] = useState<Mode>("login");
   const [step, setStep] = useState<"form" | "code">("form");
   const [phone, setPhone] = useState("");
@@ -92,7 +93,7 @@ function LoginForm() {
       }}>
         {(["login", "register"] as Mode[]).map(item =>
           <button key={item} id={"auth-tab-" + item} role="tab" aria-selected={mode === item} aria-controls="auth-panel"
-            tabIndex={mode === item ? 0 : -1} className={mode === item ? "auth-tab current" : "auth-tab"}
+            tabIndex={mode === item || (mode === "reset" && item === "login") ? 0 : -1} className={mode === item ? "auth-tab current" : "auth-tab"}
             onClick={() => switchMode(item)}>{titles[item]}</button>)}
       </div>
       <div role="tabpanel" id="auth-panel" aria-labelledby={mode === "reset" ? undefined : "auth-tab-" + mode}>

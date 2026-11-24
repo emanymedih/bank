@@ -156,7 +156,7 @@ export function VehicleRegistry(props: RegistryProps) {
     </div>
     <div className="registry-tools">
       <label className="search"><Search size={17}/><input type="search" value={query} onChange={event => onQuery(event.target.value)}
-        aria-label="Поиск по авто, VIN или номеру" placeholder="Авто, VIN или госномер"/></label>
+        aria-label="Поиск по авто, VIN или номеру" placeholder="Авто, VIN или госномер — /" title="Быстрый поиск: клавиша /"/></label>
       <label className="sort"><select aria-label="Сортировка" value={sort} onChange={event => onSort(event.target.value)}>
         <option value="recent">Сначала новые</option><option value="old">Сначала старые</option><option value="profit">По прибыли</option>
       </select><ChevronDown size={15}/></label>
@@ -242,7 +242,7 @@ export function VehicleRegistry(props: RegistryProps) {
     </> : <div className="empty registry-empty">
       <CarFront size={25}/><h3>{ledger.cars.length ? "Автомобили не найдены" : "В книге пока нет автомобилей"}</h3>
       {ledger.cars.length ? <button className="button secondary" onClick={() => { onQuery(""); onFilter("all"); }}>Сбросить фильтры</button>
-      : <button className="button primary" onClick={onAdd}>Добавить авто</button>}
+      : <button className="button primary" onClick={onAdd} title="Новое авто: клавиша n">Добавить авто</button>}
     </div>}
     <footer className="table-footer"><span>{cars.length} из {ledger.cars.length} автомобилей</span><span>Суммы в рублях</span></footer>
   </section>;

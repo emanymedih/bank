@@ -19,8 +19,8 @@ export function useWideInspector() {
   return wide;
 }
 
-export function DesktopInspector({ identity, inactive, onClose, children }: {
-  identity: string; inactive: boolean; onClose: () => void; children: ReactNode;
+export function DesktopInspector({ identity, inactive, onClose, status, children }: {
+  identity: string; inactive: boolean; onClose: () => void; status?: ReactNode; children: ReactNode;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const region = useRef<HTMLElement>(null);
@@ -36,6 +36,7 @@ export function DesktopInspector({ identity, inactive, onClose, children }: {
       <span>Карточка автомобиля</span>
       <button ref={closeButton} type="button" className="icon-button" aria-label="Закрыть карточку" onClick={onClose}><X size={21}/></button>
     </header>
+    {status}
     <div className="dialog-content">{children}</div>
   </aside>;
 }

@@ -50,6 +50,7 @@ export function OnboardingTour({ userId, onDone }: { userId: string; onDone: () 
       </div>
       <div className="tour-actions">
         <button className="button secondary" type="button" onClick={finish}>Пропустить</button>
+        {step > 0 && <button className="button secondary" type="button" onClick={() => setStep(step - 1)}>Назад</button>}
         <button ref={primaryRef} className="button primary" type="button" onClick={() => step + 1 < steps.length ? setStep(step + 1) : finish()}>
           {step + 1 < steps.length ? <>Далее<ArrowRight size={16}/></> : "Начать работу"}
         </button>

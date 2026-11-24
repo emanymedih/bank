@@ -115,7 +115,13 @@ export function CashJournal({ ledger, today, rub, formatDate, onAdd, onEdit, onC
         <span className="metric-title">Списания <ChevronRight size={17} aria-hidden="true"/></span><strong>{rub(cash.spending)}</strong><small>Операции с начала учёта</small>
       </button>
     </div>
-    <div className="funding-switch cash-tabs" role="tablist" aria-label="Раздел кассы">
+    <div className="funding-switch cash-tabs" role="tablist" aria-label="Раздел кассы" onKeyDown={event => {
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft" && event.key !== "Home" && event.key !== "End") return;
+      event.preventDefault();
+      const next = event.key === "Home" ? "journal" : event.key === "End" ? "capital" : tab === "capital" ? "journal" : "capital";
+      onTab(next);
+      document.getElementById(next === "capital" ? "cash-tab-capital" : "cash-tab-journal")?.focus();
+    }}>
       <button type="button" id="cash-tab-journal" role="tab" aria-selected={tab !== "capital"} aria-controls="cash-tabpanel" tabIndex={tab !== "capital" ? 0 : -1} onClick={() => onTab("journal")}>Движение денег</button>
       <button type="button" id="cash-tab-capital" role="tab" aria-selected={tab === "capital"} aria-controls="cash-tabpanel" tabIndex={tab === "capital" ? 0 : -1} onClick={() => onTab("capital")}>Капитал в авто</button>
     </div>

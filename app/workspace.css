@@ -538,3 +538,14 @@ h1 { font-size: 1.75rem; letter-spacing: -.04em; }
 .workspace-main .analytics-metrics .metric.hero:not(.negative) small { color: var(--muted); }
 .partner-book .partner { border: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0; background: transparent; }
 .auth-card { border-color: var(--line-soft); box-shadow: 0 10px 30px -18px rgb(20 40 30 / .25); }
+.cash-tabs { background: transparent; border-bottom: 1px solid var(--line); border-radius: 0; padding: 0; gap: 0; }
+.cash-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 10px; color: var(--muted); font-weight: 600; }
+.cash-tabs button[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); background: none; }
+.stage-card { border-radius: 0; }
+.status-close, .tour-close { position: relative; }
+.status-close::after, .tour-close::after { content: ""; position: absolute; inset: -11px; }
+.link-button { display: inline-flex; align-items: center; min-height: 32px; }
+.drawer .status-line, .desktop-inspector .status-line { margin: 8px 12px 0; }
+@media (max-width: 650px) {
+  .link-button { min-height: 44px; }
+}

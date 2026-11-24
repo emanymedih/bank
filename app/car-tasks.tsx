@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { CalendarClock, Check, Plus, Trash2 } from "lucide-react";
 import type { Car, CarTask } from "./ledger";
-import { dateLabel } from "./format";
+import { dateLabel, todayIn } from "./format";
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => todayIn();
 
 export function CarTasks({ car, userName, busy, onSave }: {
   car: Car; userName?: string; busy: boolean; onSave: (car: Car, message: string, undoable?: boolean) => Promise<unknown>;

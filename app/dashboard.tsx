@@ -165,6 +165,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
   const [error, setError] = useState("");
   const [status, setStatus] = useState<{ message: string; action?: { label: string; run: () => void }; sticky?: boolean } | null>(null);
   const [statusPaused, setStatusPaused] = useState(false);
+  const undoToken = useRef(0);
   const setToast = (message: string, action?: { label: string; run: () => void }, sticky = false) => setStatus({ message, action, sticky });
   const [actions, setActions] = useState(false);
   const writeLock = useRef(false);
@@ -233,6 +234,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
   async function save(next: Ledger, message: string, undoable = false) {
     if (writeLock.current || !loaded) return false;
     if (!validLedger(next)) { setError("Проверьте даты, суммы и доли участников."); return false; }
+    setStatus(null);
     if (signedIn) {
       writeLock.current = true;
       setBusy(true);
@@ -266,7 +268,9 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
     setError("");
     if (undoable) {
       const previous = ledger;
-      setToast(message, { label: "Вернуть", run: () => { void save(previous, "Удаление отменено."); } });
+      undoToken.current += 1;
+      const token = undoToken.current;
+      setToast(message, { label: "Вернуть", run: () => { if (token !== undoToken.current) return; void save(previous, "Удаление отменено."); } });
     }
     return true;
   }
@@ -388,11 +392,19 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         const input = document.querySelector<HTMLInputElement>('input[aria-label="Поиск по авто, VIN или номеру"]');
         if (input) { event.preventDefault(); input.focus(); }
       }
-      if ((event.key === "n" || event.key === "т") && canEdit) { event.preventDefault(); setDialog({ type: "car" }); }
+      if ((event.key === "n" || event.key === "т") && canEdit && view === "cars") { event.preventDefault(); setDialog({ type: "car" }); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dialog, canEdit]);
+  }, [dialog, canEdit, view]);
+
+  const statusBlock = status ? <div className="status-line" role="status"
+    onMouseEnter={() => setStatusPaused(true)} onMouseLeave={() => setStatusPaused(false)}
+    onFocus={() => setStatusPaused(true)} onBlur={() => setStatusPaused(false)}>
+    <span>{status.message}</span>
+    {status.action && <button type="button" className="link-button" onClick={() => { const current = status; setStatus(null); current.action?.run(); }}>{status.action.label}</button>}
+    <button type="button" className="status-close" aria-label="Скрыть сообщение" onClick={() => setStatus(null)}><X size={14}/></button>
+  </div> : null;
 
   return <div className={"shell workbench-shell" + (wideInspector && selectedCar ? " inspection-open" : "")}>
     {tour && sellerScope && <OnboardingTour userId={sellerScope} onDone={() => setTour(false)}/>}
@@ -431,13 +443,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         </div>
       </header>
       <div className="content workspace-content">
-        {status && <div className="status-line" role="status"
-          onMouseEnter={() => setStatusPaused(true)} onMouseLeave={() => setStatusPaused(false)}
-          onFocus={() => setStatusPaused(true)} onBlur={() => setStatusPaused(false)}>
-          <span>{status.message}</span>
-          {status.action && <button type="button" className="link-button" onClick={() => { const current = status; setStatus(null); current.action?.run(); }}>{status.action.label}</button>}
-          <button type="button" className="status-close" aria-label="Скрыть сообщение" onClick={() => setStatus(null)}><X size={14}/></button>
-        </div>}
+        {!selectedCar && statusBlock}
         {role === "viewer" && <p className="viewer-note" role="status">Режим наблюдения: книга доступна только для просмотра.</p>}
         {loadError ? <div className="empty panel"><p role="alert">{loadError}</p><button className="button primary" onClick={() => void load()}>Повторить</button></div>
           : !loaded ? <div className="empty panel" role="status">Загружаем книгу учёта…</div>
@@ -488,7 +494,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
           </section>}
       </div>
     </main>
-    {selectedCar && <VehicleInspector wide={wideInspector} identity={selectedCar.id} onClose={() => select(null)} inactive={Boolean(dialog)}>
+    {selectedCar && <VehicleInspector wide={wideInspector} identity={selectedCar.id} onClose={() => select(null)} inactive={Boolean(dialog)} status={statusBlock}>
       <div className="detail-heading">
         <div><StageLabel stage={vehicleStage(selectedCar)}/><h2>{selectedCar.name}</h2><div className="detail-meta">
           {selectedCar.year && <span>{selectedCar.year} г.</span>}
@@ -745,11 +751,11 @@ function dialogTitle(dialog: Dialog) {
   return dialog.id ? "Редактировать партнёра" : "Добавить партнёра";
 }
 
-function VehicleInspector({ wide, identity, onClose, inactive, children }: {
-  wide: boolean; identity: string; onClose: () => void; inactive: boolean; children: ReactNode;
+function VehicleInspector({ wide, identity, onClose, inactive, status, children }: {
+  wide: boolean; identity: string; onClose: () => void; inactive: boolean; status?: ReactNode; children: ReactNode;
 }) {
-  return wide ? <DesktopInspector identity={identity} inactive={inactive} onClose={onClose}>{children}</DesktopInspector>
-    : <Overlay side title="Карточка автомобиля" onClose={onClose} inactive={inactive}>{children}</Overlay>;
+  return wide ? <DesktopInspector identity={identity} inactive={inactive} onClose={onClose} status={status}>{children}</DesktopInspector>
+    : <Overlay side title="Карточка автомобиля" onClose={onClose} inactive={inactive} status={status}>{children}</Overlay>;
 }
 
 function VehicleTotals({ car, through }: { car: Car; through: string }) {
@@ -761,8 +767,8 @@ function VehicleTotals({ car, through }: { car: Car; through: string }) {
   </dl>;
 }
 
-function Overlay({ side, title, onClose, inactive, notice, children }: {
-  side?: boolean; title: string; onClose: () => void; inactive?: boolean; notice?: string; children: ReactNode;
+function Overlay({ side, title, onClose, inactive, notice, status, children }: {
+  side?: boolean; title: string; onClose: () => void; inactive?: boolean; notice?: string; status?: ReactNode; children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -780,6 +786,7 @@ function Overlay({ side, title, onClose, inactive, notice, children }: {
         <button className="icon-button" aria-label={side ? "Закрыть карточку" : "Закрыть"} onClick={onClose}><X size={22}/></button>
       </header>
       {notice && <p className="conflict-note" role="alert">{notice}</p>}
+      {status}
       <div className="dialog-content">{children}</div>
     </div>
   </dialog>;
@@ -947,6 +954,23 @@ function CarForm({ car, partners, knownCars, signedIn, defaultToCash, error, set
   const [weightInputs, setWeightInputs] = useState<Record<string, string>>(() => Object.fromEntries(
     (customWeights ? car?.shares ?? [] : []).map(share => [share.partner, moneyText(share.weight)]),
   ));
+  const baseSharesRef = useRef(car ? JSON.stringify(car.shares) : "[]");
+  const allocationKey = (selected: string[], contrib: Record<string, string>, weights: Record<string, string>, isManual: boolean, isCustom: boolean, alloc: boolean) =>
+    JSON.stringify({ selected, contrib, weights, isManual, isCustom, alloc });
+  const initialAllocationRef = useRef(allocationKey(selectedPartners, contributionInputs, weightInputs, manual, customWeights, allocateCash));
+  const [sharesConflict, setSharesConflict] = useState(false);
+  const resetAllocation = (source: Car) => {
+    const stored = source.shares.some(share => share.buy > 0);
+    setSelectedPartners(source.shares.map(share => share.partner));
+    setContributionInputs(Object.fromEntries(stored ? source.shares.map(share => [share.partner, moneyText(share.buy)]) : []));
+    const expected = purchaseContributionWeights(source.shares.map(share => share.buy));
+    const custom = Boolean(source.sold && source.shares.length > 1) || source.shares.some((share, index) => share.weight !== expected[index]);
+    setCustomWeights(custom);
+    setWeightInputs(Object.fromEntries((custom ? source.shares : []).map(share => [share.partner, moneyText(share.weight)])));
+    setManual(Boolean(source.shares.length > 1 && stored));
+    setAllocateCash(Boolean(stored));
+    setSharesConflict(false);
+  };
   const originalOrder = car?.shares.map(share => share.partner) ?? [];
   const order = [...new Set([...originalOrder, ...partners.map(p => p.id)])];
   const included = order.filter(id => selectedPartners.includes(id)).flatMap(id => partners.find(p => p.id === id) ?? []);
@@ -984,6 +1008,13 @@ function CarForm({ car, partners, knownCars, signedIn, defaultToCash, error, set
     if (merged.name !== identity.values.name || merged.vin !== identity.values.vin || merged.year !== identity.values.year)
       setIdentity(prev => ({ ...prev, values: { ...prev.values, name: merged.name, vin: merged.vin, year: merged.year } }));
     baseRef.current = incoming;
+    const incomingShares = JSON.stringify(car.shares);
+    if (incomingShares !== baseSharesRef.current) {
+      const currentAllocation = allocationKey(selectedPartners, contributionInputs, weightInputs, manual, customWeights, allocateCash);
+      if (currentAllocation === initialAllocationRef.current) resetAllocation(car);
+      else setSharesConflict(true);
+      baseSharesRef.current = incomingShares;
+    }
     setConflictKeys(conflicts);
   }, [car]);
 
@@ -1049,6 +1080,10 @@ function CarForm({ car, partners, knownCars, signedIn, defaultToCash, error, set
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (sharesConflict) {
+      setError("Доли и взносы изменил другой участник. Нажмите «Обновить доли», чтобы принять его версию, или закройте и откройте карточку заново.");
+      return;
+    }
     const values = new FormData(event.currentTarget);
     const name = String(values.get("name")).trim();
     const bought = String(values.get("bought"));
@@ -1095,6 +1130,7 @@ function CarForm({ car, partners, knownCars, signedIn, defaultToCash, error, set
 
   return <form onSubmit={submit}>
     {conflictKeys.length > 0 && <p className="conflict-note" role="alert">Другой участник изменил те же поля: {conflictKeys.map(key => conflictFieldLabels[key] ?? key).join(", ")}. Ваши значения оставлены — сверьте перед сохранением.</p>}
+    {sharesConflict && <p className="conflict-note" role="alert">Доли и взносы изменил другой участник. <button type="button" className="link-button" onClick={() => { if (car) { resetAllocation(car); baseSharesRef.current = JSON.stringify(car.shares); } }}>Обновить доли</button></p>}
     <PlatePhoto disabled={busy || lookupBusy} onApply={plate => changeRegistration(plate, true)}/>
     <div className="form-grid">
       <label className={"field" + (conflictKeys.includes("registration") ? " field-conflict" : "")}>Госномер<input name="registration" value={registration} onChange={event => changeRegistration(event.target.value.toUpperCase())}

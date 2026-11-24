@@ -481,7 +481,6 @@ input[type=checkbox] { accent-color: var(--brand); width: 17px; height: 17px; ma
 .contract-footer { flex-wrap: wrap; }
 @media (max-width: 650px) {
   .vehicle-progress { align-items: flex-start; flex-direction: column; }
-  .metric-title { color: #e1ecfd; }
   .clear-stage { align-self: flex-start; min-height: 32px; }
 }
 
@@ -557,10 +556,10 @@ input[type=checkbox] { accent-color: var(--brand); width: 17px; height: 17px; ma
 .task-body { display: grid; gap: 2px; min-width: 0; flex: 1; }
 .task-body strong { font-size: 1rem; font-weight: 600; }
 .task-body small { color: var(--muted); font-size: .75rem; display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
-.task-body small .negative { color: var(--negative, #b3261e); font-weight: 600; }
+.task-body small .negative { color: var(--bad); font-weight: 600; }
 .task-remove { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 4px; border-radius: 6px; position: relative; }
 .task-remove::after { content: ""; position: absolute; inset: -11px; }
-.task-remove:hover { color: #b3261e; background: #fdecea; }
+.task-remove:hover { color: var(--bad); background: var(--bad-soft); }
 .change-preview { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 14px; background: #f8faf8; display: grid; gap: 6px; }
 .change-preview strong { font-size: .875rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .change-preview ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: .875rem; }
