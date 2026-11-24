@@ -32,15 +32,16 @@ export function bookCookie(bookId: string, secure: boolean): string {
 }
 
 export const isSecureRequest = (request: Request) => new URL(request.url).protocol === "https:";
-export const clientDevice = (request: Request) => {
-  const ua = request.headers.get("user-agent") ?? "";
+export const humanizeDevice = (ua: string) => {
   if (!ua) return "Неизвестное устройство";
+  if (!ua.startsWith("Mozilla/")) return ua;
   const browser = /Edg\//.test(ua) ? "Edge" : /OPR\/|Opera/.test(ua) ? "Opera" : /Firefox\//.test(ua) ? "Firefox"
     : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "Браузер";
   const os = /Windows/.test(ua) ? "Windows" : /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS"
     : /Mac OS/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : "";
   return os ? browser + " на " + os : browser;
 };
+export const clientDevice = (request: Request) => humanizeDevice(request.headers.get("user-agent") ?? "");
 
 async function cookieValue(name: string): Promise<string | null> {
   const jar = await cookies();

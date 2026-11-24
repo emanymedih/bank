@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { sessions } from "../../../../db/schema";
-import { getSessionUser, publicSessionId } from "../../../auth";
+import { getSessionUser, humanizeDevice, publicSessionId } from "../../../auth";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -11,7 +11,7 @@ export async function GET() {
   const user = await getSessionUser();
   if (!user) return reply({ error: "Войдите, чтобы открыть кабинет." }, 401);
   const rows = await getDb().select().from(sessions).where(eq(sessions.userId, user.userId));
-  return reply({ sessions: rows.map(row => ({ id: publicSessionId(row.id), device: row.device, createdAt: row.createdAt })) });
+  return reply({ sessions: rows.map(row => ({ id: publicSessionId(row.id), device: humanizeDevice(row.device), createdAt: row.createdAt })) });
 }
 
 export async function DELETE(request: Request) {
