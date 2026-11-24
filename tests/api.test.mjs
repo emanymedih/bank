@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { beforeEach, afterEach } from "node:test";
-import { emptyLedger } from "../app/ledger.ts";
+import { emptyLedger, ledgerClientVersion } from "../app/ledger.ts";
 import { alice, makeCar, makeLedger } from "./support/fixtures.mjs";
 import { createRuntime, ledgerRequest, loadRoutes, photoBytes, photoContext, photoRequest } from "./support/api-runtime.mjs";
 
@@ -199,7 +199,7 @@ test("a photo cannot grow the ledger past the limit for a subsequent save", asyn
       id: "work-" + work, name: "Работа", date: "2026-10-01", notes: "я".repeat(350),
     })),
   })));
-  const targetBytes = 749_924;
+  const targetBytes = 749_898;
   let remaining = targetBytes - Buffer.byteLength(JSON.stringify(ledger));
   for (const work of ledger.cars.flatMap(car => car.works)) {
     if (remaining <= 0) break;
@@ -212,7 +212,7 @@ test("a photo cannot grow the ledger past the limit for a subsequent save", asyn
     }
   }
   assert.equal(Buffer.byteLength(JSON.stringify(ledger)), targetBytes);
-  assert.equal((await runtime.as("owner", () => routes.ledger.PUT(ledgerRequest(ledger, 0)))).status, 200);
+  assert.equal((await runtime.as("owner", () => routes.ledger.PUT(ledgerRequest(ledger, 0, {}, ledgerClientVersion)))).status, 200);
 
   const id = ledger.cars[0].id;
   const upload = await runtime.as("owner", () => routes.photos.POST(photoRequest(id, 1), photoContext(id)));
@@ -243,4 +243,35 @@ test("a photo upload cleans staged data if a concurrent ledger write removes its
   assert.equal((await upload).status, 409);
   assert.equal(runtime.photos.size, 0);
   assert.deepEqual(await (await runtime.as("owner", routes.ledger.GET)).json(), { ledger: makeLedger(), revision: 2 });
+});
+
+test("stage history, batch costs and partial payments survive a real SQLite save and reopen", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "avtobank-book-pilot-"));
+  const disk = await createRuntime({ path: join(dir, "ledger.sqlite") });
+  t.after(async () => { disk.close(); await rm(dir, { recursive: true, force: true }); });
+  const initial = makeLedger(makeCar({ id: "legacy" }));
+  const created = await disk.as("owner", () => routes.ledger.PUT(ledgerRequest(initial, 0)));
+  assert.equal(created.status, 200);
+
+  const car = makeCar({
+    id: "tracked", sold: "2026-11-20", price: 150_000_000, stage: "listed",
+    stageHistory: [{ stage: "purchased", date: "2026-10-01", source: "purchase" }, { stage: "listed", date: "2026-11-01" }],
+    expenses: [
+      { id: "paint", name: "Окраска", amount: 6_200_000, date: "2026-10-10", payer: alice.id, category: "Работы" },
+      { id: "ad", name: "Авито", amount: 750_000, date: "2026-11-01", payer: null, category: "Реклама" },
+    ],
+  });
+  car.shares[0].payouts = [{ id: "payment", amount: 2_000_000, date: "2026-11-22", fromCash: true }];
+  const updated = makeLedger(initial.cars[0], car);
+  const saved = await disk.as("owner", () => routes.ledger.PUT(ledgerRequest(updated, 1)));
+  assert.deepEqual(await saved.json(), { revision: 2 });
+  disk.reopen();
+  assert.deepEqual(await (await disk.as("owner", routes.ledger.GET)).json(), { ledger: updated, revision: 2 });
+  assert.deepEqual(await (await disk.as("other", routes.ledger.GET)).json(), { ledger: emptyLedger, revision: 0 });
+  const outdated = await disk.as("owner", () => routes.ledger.PUT(ledgerRequest(initial, 2)));
+  assert.equal(outdated.status, 409);
+  assert.match((await outdated.json()).error, /Обновите страницу/);
+  assert.deepEqual(await (await disk.as("owner", routes.ledger.GET)).json(), { ledger: updated, revision: 2 });
+  const latest = await disk.as("owner", () => routes.ledger.PUT(ledgerRequest(initial, 2, {}, ledgerClientVersion)));
+  assert.deepEqual(await latest.json(), { revision: 3 });
 });

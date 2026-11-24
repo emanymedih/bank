@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Camera, CarFront, Check, ChevronRight, ReceiptText, Wrench, X } from "lucide-react";
+import { Camera, CarFront, Check, ChevronRight, ListChecks, ReceiptText, Wrench, X } from "lucide-react";
+import { stageNames } from "./ledger";
 import type { Car, CarPhoto, Expense, WorkEntry } from "./ledger";
 
 export function useWideInspector() {
@@ -61,12 +62,12 @@ export function VehicleCover({ car, source, onHistory }: {
 }
 
 type Event =
-  | { id: string; type: "purchase" | "sale"; date: string; name: string; amount: number | null }
+  | { id: string; type: "purchase" | "sale" | "stage"; date: string; name: string; amount: number | null }
   | { id: string; type: "expense"; date: string; name: string; amount: number; expense: Expense }
   | { id: string; type: "work"; date: string; name: string; amount: number | null; work: WorkEntry; expense?: Expense };
 
-const icons = { purchase: CarFront, sale: Check, expense: ReceiptText, work: Wrench };
-const eventLabels = { purchase: "Покупка", sale: "Продажа", expense: "Расход", work: "Работа" };
+const icons = { purchase: CarFront, sale: Check, stage: ListChecks, expense: ReceiptText, work: Wrench };
+const eventLabels = { purchase: "Покупка", sale: "Продажа", stage: "Этап", expense: "Расход", work: "Работа" };
 
 export function vehicleEvents(car: Car): Event[] {
   const items: Event[] = [{ id: "purchase", type: "purchase", date: car.bought, name: "Автомобиль куплен", amount: car.buy }];
@@ -82,6 +83,10 @@ export function vehicleEvents(car: Car): Event[] {
   for (const expense of car.expenses) {
     if (!combined.has(expense.id)) items.push({ id: "expense:" + expense.id, type: "expense", date: expense.date,
       name: expense.name, amount: expense.amount, expense });
+  }
+  for (const [index, entry] of [...(car.stageHistory ?? [])].reverse().entries()) {
+    if (entry.source !== "purchase") items.push({ id: "stage:" + index, type: "stage", date: entry.date,
+      name: stageNames[entry.stage], amount: null });
   }
   if (car.sold) items.push({ id: "sale", type: "sale", date: car.sold, name: "Автомобиль продан", amount: car.price });
   return items.sort((a, b) => b.date.localeCompare(a.date) || Number(b.type === "sale") - Number(a.type === "sale") ||

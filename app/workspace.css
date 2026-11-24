@@ -428,3 +428,34 @@ h1 { font-size: 2rem; letter-spacing: -.04em; }
   .capital-table td { font-size: .8125rem; }
   .capital-empty { margin-inline: 12px; }
 }
+
+.payout-records { display: grid; justify-items: start; gap: 5px; margin-top: 8px; }
+.payout-records .button { max-width: 100%; white-space: normal; text-align: left; }
+.batch-entry { margin-bottom: 8px; }
+.stage-analysis-summary {
+  display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 18px;
+  margin: 0 20px 14px; padding: 13px; border-radius: 9px; background: #edf1db;
+}
+.stage-analysis-summary h3 { font-size: 1rem; }
+.stage-analysis-summary p, .stage-analysis-summary small { display: block; color: var(--muted); font-size: .82rem; }
+.stage-analysis-summary strong { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.stage-analysis-stats, .stage-analysis-cars { list-style: none; padding: 0; margin: 0 20px 14px; }
+.stage-analysis-stats { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); }
+.stage-analysis-stats .stage-label { color: #234138; }
+.stage-analysis-row {
+  width: 100%; display: grid; grid-template-columns: minmax(0,2fr) minmax(0,1fr) auto; align-items: center;
+  gap: 6px 13px; min-height: 54px; padding: 6px 2px; background: transparent; color: var(--ink);
+  border: 0; border-top: 1px solid var(--line); text-align: left; font-variant-numeric: tabular-nums;
+}
+.stage-analysis-row:hover { background: #f4f6ec; }
+.stage-analysis-row > span { min-width: 0; display: grid; gap: 2px; overflow-wrap: anywhere; }
+.stage-analysis-row small, .stage-analysis-empty { color: var(--muted); }
+.stage-analysis-empty { margin: 0 20px 10px; font-size: .82rem; }
+@media (max-width: 720px) {
+  .stage-analysis-summary, .stage-analysis-cars, .stage-analysis-stats, .stage-analysis-empty { margin-inline: 12px; }
+  .stage-analysis-stats .band-card { padding: 8px 4px; }
+  .stage-analysis-row { grid-template-columns: minmax(0,1fr) auto; }
+  .stage-analysis-row > strong { grid-column: 2; }
+}
+.batch-expense-source { overflow-wrap: anywhere; }
+.batch-expenses .form-footer { flex-wrap: wrap; }

@@ -74,11 +74,11 @@ export async function createRuntime({ path = ":memory:" } = {}) {
   };
 }
 
-export function ledgerRequest(ledger, revision, headers = {}) {
+export function ledgerRequest(ledger, revision, headers = {}, clientVersion) {
   return new Request("https://app.example.test/api/ledger", {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify({ ledger, revision }),
+    body: JSON.stringify({ ledger, revision, clientVersion }),
   });
 }
 

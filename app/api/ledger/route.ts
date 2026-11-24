@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ledgers } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
-import { emptyLedger, maxLedgerBytes, parseLedger, readStoredLedger } from "../../ledger";
+import { emptyLedger, ledgerClientVersion, maxLedgerBytes, parseLedger, readStoredLedger } from "../../ledger";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +46,11 @@ export async function PUT(request: Request) {
   }
   const previousLedger = previous ? readStoredLedger(previous.data) : undefined;
   if (previousLedger === null) return unreadable();
+  // Older tabs may omit the new fields when rebuilding a vehicle form.
+  if (data.clientVersion !== ledgerClientVersion && previousLedger?.cars.some(car =>
+    car.stageHistory?.length || car.shares.some(share => share.payouts?.length))) {
+    return reply({ error: "Обновите страницу перед сохранением. В книге уже есть история этапов или новые выплаты." }, 409);
+  }
   if (!hasOnlyStoredPhotos(previousLedger, ledger)) return reply({ error: "Фотографии нужно загрузить через карточку автомобиля." }, 422);
 
   const revision = data.revision + 1;

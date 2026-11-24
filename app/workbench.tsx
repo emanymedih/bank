@@ -177,7 +177,7 @@ export function VehicleRegistry(props: RegistryProps) {
                 <td className={"num " + tone(calc.net)}>{profitText(calc.net, rub)}</td>
                 {ledger.partners.map(person => <td key={person.id} className="num">{snapshot ? <>
                   {rub(snapshot.people[person.id])}
-                  {calc.people[person.id]?.profit > 0 && <small className="cell-caption">{calc.people[person.id].withdrawn ? "Забрал" : "В банке"}</small>}
+                  {calc.people[person.id]?.profit > 0 && <small className="cell-caption">{calc.people[person.id].paid > 0 ? "Выплачено " + rub(calc.people[person.id].paid) : "В банке"}</small>}
                 </> : "—"}</td>)}
                 <td className="num">{snapshot ? rub(snapshot.bank) : "—"}</td>
               </> : <>
@@ -214,7 +214,7 @@ export function VehicleRegistry(props: RegistryProps) {
           </span>
           {detailed && paid && <span className="mobile-account-balances">
             {ledger.partners.map(person => <span key={person.id}>{person.name} · {rub(paid.people[person.id])}
-              {calc.people[person.id]?.withdrawn ? " · забрал" : ""}</span>)}
+              {calc.people[person.id]?.paid > 0 ? " · выплачено " + rub(calc.people[person.id].paid) : ""}</span>)}
             <strong>Накоплено · {rub(paid.bank)}</strong>
           </span>}
         </button>;

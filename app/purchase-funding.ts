@@ -37,8 +37,11 @@ export function fundingSnapshot(ledger: Ledger, through: string) {
   // Use the recorded deal profit for both the cash payout and the retained balance.
   const completed = cars.filter(car => car.sold && car.sold <= through).map(car => ({
     ...car,
-    shares: car.shares.map(share => share.cashWithdrawalDate && share.cashWithdrawalDate > through
-      ? { ...share, withdrawn: false } : share),
+    shares: car.shares.map(share => ({
+      ...share,
+      withdrawn: share.withdrawn && (!share.cashWithdrawalDate || share.cashWithdrawalDate <= through),
+      payouts: share.payouts?.filter(payment => payment.date <= through),
+    })),
   }));
   const { balances } = totals({ ...ledger, cars: completed });
   const total = [...deployed.values()].reduce((sum, amount) => sum + amount, 0);

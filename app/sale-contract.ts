@@ -13,9 +13,20 @@ export type SaleContract = {
   };
 };
 
+export type VehicleTransfer = {
+  place: string; date: string; mileage: string;
+  keys: string; documents: string; notes: string;
+};
+
 const dates = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "long", year: "numeric", timeZone: "UTC" });
 const money = new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 2 });
 const formatDate = (value: string) => dates.format(new Date(value + "T00:00:00Z"));
+
+export function parseTransferDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000-")) return null;
+  const date = new Date(value + "T00:00:00Z");
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : null;
+}
 
 export function contractMoney(value: string) {
   const normalized = value.replace(/\s/g, "").replace(",", ".");
@@ -32,16 +43,28 @@ function partyDetails(party: ContractParty) {
   ].join(", ");
 }
 
+function vehicleFields(vehicle: SaleContract["vehicle"], mileage: string): [string, string | undefined][] {
+  const { documents } = vehicle;
+  return [
+    ["Марка, модель", vehicle.name], ["Год выпуска", vehicle.year], ["VIN", vehicle.vin],
+    ["Госномер", vehicle.registration], ["Пробег", mileage ? mileage + " км" : ""],
+    ["Тип ТС", documents.type], ["Цвет", documents.color], ["Кузов", documents.body], ["Шасси", documents.chassis],
+    ["Двигатель", documents.engine],
+  ];
+}
+
+function formatFields(fields: [string, string | undefined][]) {
+  return fields.filter(([, value]) => value).map(([label, value]) => label + ": " + value).join(" · ");
+}
+
 export function contractSections(draft: SaleContract) {
   const { vehicle } = draft;
-  const documents = vehicle.documents;
-  const car = [
-    ["Марка, модель", vehicle.name], ["Год выпуска", vehicle.year], ["VIN", vehicle.vin],
-    ["Госномер", vehicle.registration], ["Пробег", vehicle.mileage ? vehicle.mileage + " км" : ""],
-    ["Тип ТС", documents.type], ["Цвет", documents.color], ["Кузов", documents.body], ["Шасси", documents.chassis],
-    ["Двигатель", documents.engine], ["ПТС / ЭПТС", documents.pts], ["Кем выдан ПТС", documents.ptsIssuer],
+  const { documents } = vehicle;
+  const car = formatFields([
+    ...vehicleFields(vehicle, vehicle.mileage),
+    ["ПТС / ЭПТС", documents.pts], ["Кем выдан ПТС", documents.ptsIssuer],
     ["Дата выдачи ПТС", documents.ptsDate ? formatDate(documents.ptsDate) : ""], ["СТС", documents.sts],
-  ].filter(([, value]) => value).map(([label, value]) => label + ": " + value).join(" · ");
+  ]);
 
   return {
     heading: "Договор купли-продажи автомобиля",
@@ -61,12 +84,34 @@ export function contractSections(draft: SaleContract) {
   };
 }
 
-export async function exportContract(draft: SaleContract, printWindow?: Window) {
+export function vehicleTransferSections(contract: SaleContract, transfer: VehicleTransfer) {
+  const paragraphs = [
+    {
+      name: "Передача автомобиля",
+      text: "По договору купли-продажи автомобиля от " + formatDate(contract.date) +
+        " продавец передал, а покупатель принял автомобиль. " + formatFields(vehicleFields(contract.vehicle, transfer.mileage)) + ".",
+    },
+  ];
+  if (transfer.keys) paragraphs.push({ name: "Переданные ключи", text: transfer.keys });
+  if (transfer.documents) paragraphs.push({ name: "Переданные документы", text: transfer.documents });
+  if (transfer.notes) paragraphs.push({ name: "Замечания при передаче", text: transfer.notes });
+
+  return {
+    heading: "Акт приёма-передачи автомобиля",
+    where: transfer.place + " · " + formatDate(transfer.date),
+    parties: [
+      { label: "Продавец", name: contract.seller.name, details: "Паспорт: " + contract.seller.passport },
+      { label: "Покупатель", name: contract.buyer.name, details: "Паспорт: " + contract.buyer.passport },
+    ],
+    paragraphs,
+  };
+}
+
+export async function exportSaleDocument(content: ReturnType<typeof contractSections>, printWindow?: Window) {
   const [{ default: pdfMake }, { default: fonts }] = await Promise.all([
     import("pdfmake/build/pdfmake.js"), import("pdfmake/build/vfs_fonts.js"),
   ]);
   pdfMake.addVirtualFileSystem(fonts);
-  const content = contractSections(draft);
   const definition = {
     pageSize: "A4", pageMargins: [44, 40, 44, 40],
     defaultStyle: { font: "Roboto", color: "#172030", fontSize: 10.5, lineHeight: 1.15 },
@@ -89,5 +134,5 @@ export async function exportContract(draft: SaleContract, printWindow?: Window) 
   };
   const pdf = pdfMake.createPdf(definition);
   if (printWindow) pdf.print({}, printWindow);
-  else await new Promise<void>(resolve => pdf.download("Договор купли-продажи автомобиля.pdf", resolve));
+  else await new Promise<void>(resolve => pdf.download(content.heading + ".pdf", resolve));
 }

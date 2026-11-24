@@ -27,3 +27,14 @@ test("a linked expense appears once in the vehicle timeline and remains traceabl
   assert.equal(events.filter(event => event.type === "work" || event.type === "expense")
     .reduce((sum, event) => sum + (event.amount ?? 0), 0), figures(car).expenses);
 });
+
+test("the vehicle timeline shows recorded stage changes and the purchase only once", () => {
+  const car = makeCar({ stage: "listed", stageHistory: [
+    { stage: "purchased", date: "2026-10-01", source: "purchase" },
+    { stage: "preparation", date: "2026-10-15" },
+    { stage: "listed", date: "2026-10-15" },
+  ] });
+  assert.deepEqual(vehicleEvents(car).map(event => [event.type, event.name]), [
+    ["stage", "На продаже"], ["stage", "Подготовка"], ["purchase", "Автомобиль куплен"],
+  ]);
+});
