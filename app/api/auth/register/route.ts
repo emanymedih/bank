@@ -17,5 +17,5 @@ export async function POST(request: Request) {
   const [existing] = await getDb().select({ id: users.id }).from(users).where(eq(users.phone, phone));
   if (existing) return reply({ error: "Этот номер уже зарегистрирован. Войдите или восстановите пароль." }, 409);
   const sent = await issueOtp(phone);
-  return "error" in sent ? reply({ error: sent.error }, sent.status) : reply({ status: "code_sent" });
+  return "error" in sent ? reply({ error: sent.error }, sent.status) : reply({ status: "code_sent", devCode: sent.devCode });
 }

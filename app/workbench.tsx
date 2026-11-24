@@ -20,14 +20,14 @@ export function FinanceStrip({ cash, retained, invested, rub, onCash }: {
   const tone = cashTone(cash);
   return <dl className="finance-strip" aria-label="Сводка по деньгам">
     <div className={"finance-cash" + (tone === "negative" ? " negative" : "")}>
-      <dt><Wallet size={17} aria-hidden="true"/> Доступно на покупку{tone === "negative" && <span className="badge-overdraft">Перерасход</span>}</dt>
+      <dt title="Остаток кассы: все поступления минус все списания. Эти деньги можно вкладывать в новые покупки."><Wallet size={17} aria-hidden="true"/> Доступно на покупку{tone === "negative" && <span className="badge-overdraft">Перерасход</span>}</dt>
       <dd><strong>{cash === null ? "—" : rub(cash)}</strong>
         <button type="button" onClick={onCash}>{cash === null ? "Добавить остаток" : tone === "negative" ? "Разобрать в кассе" : "Открыть кассу"}<ArrowRight size={15} aria-hidden="true"/></button>
         {tone === "negative" && <small className="finance-note">Списания превышают поступления на {rub(overdraftAmount(cash))}</small>}
       </dd>
     </div>
-    <div><dt>Накопленная прибыль</dt><dd><strong>{rub(retained)}</strong></dd></div>
-    <div><dt>Вложено в авто</dt><dd><strong>{rub(invested)}</strong></dd></div>
+    <div><dt title="Прибыль проданных автомобилей, которая осталась в бизнесе, а не выплачена партнёрам.">Накопленная прибыль</dt><dd><strong>{rub(retained)}</strong></dd></div>
+    <div><dt title="Покупки и расходы по автомобилям, которые ещё в работе: деньги уже вложены, но не вернулись с продажей.">Вложено в авто</dt><dd><strong>{rub(invested)}</strong></dd></div>
   </dl>;
 }
 

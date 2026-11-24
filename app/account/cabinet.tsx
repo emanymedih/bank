@@ -159,6 +159,17 @@ export function Cabinet({ initialName, initialPhone }: { initialName: string; in
         </ul>
         <p className="auth-footnote">Завершение текущего сеанса выйдет из кабинета на этом устройстве.</p>
       </section>
+
+      <section className="account-section" aria-label="Обучение">
+        <h2>Подсказки</h2>
+        <p className="auth-footnote">Короткий тур по рабочему пространству: касса, карточка авто, задачи и лента.</p>
+        <button className="button secondary" type="button" onClick={() => {
+          try {
+            for (const key of Object.keys(localStorage)) if (key.startsWith("avto_tour_")) localStorage.removeItem(key);
+          } catch { /* storage недоступен */ }
+          window.location.assign("/");
+        }}>Показать тур ещё раз</button>
+      </section>
     </div>
   </main>;
 }

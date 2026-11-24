@@ -31,11 +31,13 @@ export function Analytics({ ledger, today, rub }: { ledger: Ledger; today: strin
   const hasActivity = results.expenses > 0 || results.sales > 0;
 
   return <>
-    <div className="metrics analytics-metrics">
+    {hasActivity && <div className="metrics analytics-metrics">
       <div className="metric hero"><span className="metric-title"><BarChart3 size={18}/> Чистая прибыль за год</span><strong>{rub(results.profit)}</strong><small>По завершённым сделкам</small></div>
       <div className="metric"><span className="metric-title">Расходы на автомобили</span><strong>{rub(results.expenses)}</strong><small>Работы, запчасти и другие расходы</small></div>
       <div className="metric"><span className="metric-title">Продано за год</span><strong>{results.sales} <span className="unit">авто</span></strong><small>{results.sales ? rub(Math.round(results.profit / results.sales)) + " в среднем на авто" : "Продаж пока нет"}</small></div>
-    </div>
+    </div>}
+    {!hasActivity && <section className="panel insights-panel"><div className="empty"><h3>За {year} год пока нет операций</h3>
+      <p>Добавьте покупку, расход или продажу — и здесь появятся прибыль, график по месяцам и диапазоны бюджетов.</p></div></section>}
     <section className="panel insights-panel">
       <div className="section-header insights-heading">
         <div><h2>По месяцам</h2><p>Расходы по дате оплаты, прибыль по дате продажи.</p></div>
@@ -68,12 +70,12 @@ export function Analytics({ ledger, today, rub }: { ledger: Ledger; today: strin
     </section>
     <section className="panel insights-panel">
       <div className="section-header"><div><h2>Прибыль по бюджету покупки</h2><p>Средняя прибыль и рентабельность по проданным автомобилям.</p></div></div>
-      <div className="band-grid">{results.bands.map(band => <div className="band-card" key={band.title}>
+      {results.sales ? <div className="band-grid">{results.bands.map(band => <div className="band-card" key={band.title}>
         <b>{band.title}</b><span>Продано · {band.count}</span>
         <strong className={color(band.profit)}>{band.count ? rub(Math.round(band.profit / band.count)) : "—"}</strong>
         <small>Средняя прибыль на авто</small>
         <div>Рентабельность <b>{band.invested ? number.format(band.profit / band.invested * 100) + "%" : "—"}</b></div>
-      </div>)}</div>
+      </div>)}</div> : <div className="empty"><p>Продаж за год пока нет — диапазоны появятся после первой завершённой сделки.</p></div>}
     </section>
   </>;
 }
@@ -113,10 +115,11 @@ export function CashJournal({ ledger, today, rub, formatDate, onAdd, onEdit, onC
         <span className="metric-title">Списания <ChevronRight size={17} aria-hidden="true"/></span><strong>{rub(cash.spending)}</strong><small>Операции с начала учёта</small>
       </button>
     </div>
-    <div className="funding-switch cash-tabs" role="group" aria-label="Раздел кассы">
-      <button type="button" aria-pressed={tab !== "capital"} onClick={() => onTab("journal")}>Движение денег</button>
-      <button type="button" aria-pressed={tab === "capital"} onClick={() => onTab("capital")}>Капитал в авто</button>
+    <div className="funding-switch cash-tabs" role="tablist" aria-label="Раздел кассы">
+      <button type="button" id="cash-tab-journal" role="tab" aria-selected={tab !== "capital"} aria-controls="cash-tabpanel" tabIndex={tab !== "capital" ? 0 : -1} onClick={() => onTab("journal")}>Движение денег</button>
+      <button type="button" id="cash-tab-capital" role="tab" aria-selected={tab === "capital"} aria-controls="cash-tabpanel" tabIndex={tab === "capital" ? 0 : -1} onClick={() => onTab("capital")}>Капитал в авто</button>
     </div>
+    <div role="tabpanel" id="cash-tabpanel" aria-labelledby={tab === "capital" ? "cash-tab-capital" : "cash-tab-journal"}>
     {tab === "capital" ? <CapitalPortfolio ledger={ledger} today={today} mode={mode} onMode={onMode}
       rub={rub} formatDate={formatDate} onCar={onCar}/> : <>
       {tab === "income" && <section className="panel insights-panel" aria-labelledby="cash-income-title">
@@ -145,5 +148,6 @@ export function CashJournal({ ledger, today, rub, formatDate, onAdd, onEdit, onC
         </div>}
       </section>
     </>}
+    </div>
   </>;
 }

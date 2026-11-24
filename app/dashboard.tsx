@@ -12,6 +12,7 @@ import { Analytics, CashJournal } from "./insights";
 import { StageAnalytics } from "./stage-analytics";
 import { alignPurchaseStage, initializeStageHistory, recordStageChange } from "./stage-history";
 import { mergeDraft } from "../lib/merge-draft";
+import { dateLabel } from "./format";
 import { BatchExpenseForm } from "./batch-expenses";
 import type { CashTab } from "./insights";
 import { VehicleFunding } from "./funding-view";
@@ -40,7 +41,7 @@ const navigation = [
   { id: "cars", icon: LayoutDashboard }, { id: "cash", icon: Wallet },
   { id: "analytics", icon: BarChart3 }, { id: "partners", icon: UsersRound }, { id: "feed", icon: History },
 ] as const;
-const carTabs = { timeline: "Лента", summary: "Расчёты", history: "Работы и фото", parts: "Запчасти", tasks: "Задачи", audit: "Правки" };
+const carTabs = { timeline: "История", summary: "Деньги", history: "Работы и фото", parts: "Запчасти", tasks: "Задачи", audit: "Правки" };
 type CarTab = keyof typeof carTabs;
 type Dialog =
   | { type: "car"; id?: string }
@@ -60,7 +61,6 @@ type Dialog =
   | { type: "confirm"; title: string; message: string; action: () => Promise<boolean>; label: string; danger?: boolean };
 
 const format = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
-const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 const rub = (value: number) => format.format(value / 100) + " ₽";
 // localStorage может быть заблокирован (приватный режим) — не роняем приложение.
 const storage = {
@@ -68,7 +68,6 @@ const storage = {
   set(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* недоступно */ } },
   remove(key: string) { try { localStorage.removeItem(key); } catch { /* недоступно */ } },
 };
-const dateLabel = (value: string) => dateFormat.format(new Date(value)).replace(/\sг\.$/, "").replace(/\.(?=\s)/g, "");
 const formSnapshot = (source: Car) => ({
   registration: source.registration ?? "", name: source.name, vin: source.vin ?? "",
   year: source.year ? String(source.year) : "", buy: moneyText(source.buy),
@@ -379,6 +378,22 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
       label: "Удалить демоданные", action: () => save({ ...ledger, cars: ledger.cars.filter(c => !c.demo) }, "Демоданные удалены") });
   }
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
+      if (dialog) return;
+      if (event.key === "/") {
+        const input = document.querySelector<HTMLInputElement>('input[aria-label="Поиск по авто, VIN или номеру"]');
+        if (input) { event.preventDefault(); input.focus(); }
+      }
+      if ((event.key === "n" || event.key === "т") && canEdit) { event.preventDefault(); setDialog({ type: "car" }); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dialog, canEdit]);
+
   return <div className={"shell workbench-shell" + (wideInspector && selectedCar ? " inspection-open" : "")}>
     {tour && sellerScope && <OnboardingTour userId={sellerScope} onDone={() => setTour(false)}/>}
     <a className="skip-to-workspace" href="#workspace-main">К рабочей области</a>
@@ -499,10 +514,22 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         </div>
       </div>
       <VehicleCover key={selectedCar.id} car={selectedCar} source={photoSource} onHistory={() => setCarTab("history")}/>
-      <div className="tabs car-tabs" role="group" aria-label="Раздел карточки">
-        {(Object.keys(carTabs) as CarTab[]).map(tab => <button key={tab} type="button" className={carTab === tab ? "active" : ""}
-          aria-pressed={carTab === tab} onClick={() => { setCarTab(tab); setError(""); }}>{carTabs[tab]}</button>)}
+      <div className="tabs car-tabs" role="tablist" aria-label="Раздел карточки" onKeyDown={event => {
+        const keys = Object.keys(carTabs) as CarTab[];
+        const index = keys.indexOf(carTab);
+        const next = event.key === "ArrowRight" ? (index + 1) % keys.length
+          : event.key === "ArrowLeft" ? (index - 1 + keys.length) % keys.length
+          : event.key === "Home" ? 0 : event.key === "End" ? keys.length - 1 : -1;
+        if (next < 0) return;
+        event.preventDefault();
+        setCarTab(keys[next]); setError("");
+        document.getElementById("car-tab-" + keys[next])?.focus();
+      }}>
+        {(Object.keys(carTabs) as CarTab[]).map(tab => <button key={tab} type="button" id={"car-tab-" + tab} role="tab"
+          aria-selected={carTab === tab} aria-controls="car-tabpanel" tabIndex={carTab === tab ? 0 : -1}
+          className={carTab === tab ? "active" : ""} onClick={() => { setCarTab(tab); setError(""); }}>{carTabs[tab]}</button>)}
       </div>
+      <div role="tabpanel" id="car-tabpanel" aria-labelledby={"car-tab-" + carTab}>
       {carTab === "timeline" ? <>
         <VehicleTotals car={selectedCar} through={currentDate}/>
         <VehicleFunding car={selectedCar} partners={ledger.partners} through={currentDate} mode={fundingMode}
@@ -521,10 +548,6 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
               + " от " + dateLabel(selectedCar.bought) + ". Доли в машине сохранятся.",
             label: "Учесть в кассе", danger: false, action: () => saveCar({ ...selectedCar, cashPurchase: true }, "Покупка учтена в кассе"),
           }) : undefined}/>
-        <details className="feed-collapse">
-          <summary>Правки участников</summary>
-          <ActivityFeed carId={selectedCar.id} partners={ledger.partners}/>
-        </details>
       </> : carTab === "history" ? <WorkHistory car={selectedCar} busy={busy} error={dialog ? "" : error} source={photoSource} dateLabel={dateLabel}
         onUpload={(phase, files, workId) => uploadPhotos(selectedCar, phase, files, workId)}
         onWork={work => open({type:"work", id:selectedCar.id, workId:work?.id})}
@@ -556,6 +579,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
             + (selectedCar.shares.some(share => share.partner === id && share.cashWithdrawalDate) ? " Списание исчезнет из кассы." : ""),
           label: "Снять отметку", action: () => saveCar({ ...selectedCar, shares: selectedCar.shares.map(share => share.partner === id
             ? { ...share, withdrawn: false, cashWithdrawalDate: undefined } : share) }, "Отметка о выплате снята") })}/>}
+      </div>
       <footer className="vehicle-quick-actions" aria-label="Действия с автомобилем">
         <button className="button primary" disabled={busy} onClick={() => open({ type: "expense", id: selectedCar.id })}><Plus size={17}/>Расход</button>
         <button className="button secondary" onClick={() => { setCarTab("history"); setError(""); }}><Camera size={17}/>Фото</button>

@@ -57,7 +57,7 @@ function eventLine(event: AuditEvent, partners: Partner[]): string {
   return `${head} · ${fieldLabels[event.field] ?? event.field}: ${formatValue(event.field, event.before, partners)} → ${formatValue(event.field, event.after, partners)}`;
 }
 
-const timeLabel = (iso: string) => new Date(iso).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const timeLabel = (iso: string) => new Date(iso).toLocaleString("ru-RU", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 export function ActivityFeed({ carId, partners = [], onSeen }: {
   carId?: string; partners?: Partner[]; onSeen?: (seq: number) => void;
@@ -97,9 +97,18 @@ export function ActivityFeed({ carId, partners = [], onSeen }: {
   }
 
   return <section className="panel activity-feed" aria-label={carId ? "Правки автомобиля" : "Лента изменений книги"}>
-    {!carId && <div className="tabs feed-filters" role="group" aria-label="Фильтр событий">
-      {filters.map(item => <button key={item.id} type="button" className={filter === item.id ? "active" : ""}
-        aria-pressed={filter === item.id} onClick={() => setFilter(item.id)}>{item.label}</button>)}
+    {!carId && <div className="feed-filters" role="group" aria-label="Фильтр событий">
+      <button type="button" className={filter === "all" ? "active" : ""} aria-pressed={filter === "all"} onClick={() => setFilter("all")}>Все</button>
+      <span className="filter-group" role="group" aria-label="Деньги">
+        <span className="filter-group-label">Деньги</span>
+        {filters.filter(item => ["cash", "expense", "payout"].includes(item.id)).map(item => <button key={item.id} type="button" className={filter === item.id ? "active" : ""}
+          aria-pressed={filter === item.id} onClick={() => setFilter(item.id)}>{item.label}</button>)}
+      </span>
+      <span className="filter-group" role="group" aria-label="Сделки и участники">
+        <span className="filter-group-label">Сделки</span>
+        {filters.filter(item => ["car", "task", "part", "partner"].includes(item.id)).map(item => <button key={item.id} type="button" className={filter === item.id ? "active" : ""}
+          aria-pressed={filter === item.id} onClick={() => setFilter(item.id)}>{item.label}</button>)}
+      </span>
     </div>}
     {state === "loading" && <p className="feed-empty" role="status">Загружаем ленту…</p>}
     {state === "error" && <p className="feed-empty" role="alert">Не удалось загрузить ленту. <button className="button secondary" onClick={() => void load(null, false)}>Повторить</button></p>}

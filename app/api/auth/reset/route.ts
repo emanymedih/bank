@@ -16,9 +16,11 @@ export async function POST(request: Request) {
   if (!await rateLimit("otp:" + clientIp(request), 10, 60 * 60_000)) return reply({ error: "Слишком много кодов. Подождите час." }, 429);
   const [existing] = await getDb().select({ id: users.id }).from(users).where(eq(users.phone, phone));
   // Не раскрываем, зарегистрирован ли номер; код уходит только существующему пользователю.
+  let devCode: string | undefined;
   if (existing) {
     const sent = await issueOtp(phone);
     if ("error" in sent) return reply({ error: sent.error }, sent.status);
+    devCode = sent.devCode;
   }
-  return reply({ status: "code_sent" });
+  return reply({ status: "code_sent", devCode });
 }

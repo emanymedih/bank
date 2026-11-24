@@ -25,12 +25,22 @@ const steps = [
 export function OnboardingTour({ userId, onDone }: { userId: string; onDone: () => void }) {
   const [step, setStep] = useState(0);
   const primaryRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { primaryRef.current?.focus(); }, [step]);
   const finish = () => { try { localStorage.setItem("avto_tour_" + userId, "1"); } catch { /* storage недоступен */ } onDone(); };
   const current = steps[step];
   return <div className="tour-overlay" role="dialog" aria-modal="true" aria-labelledby="tour-title"
-    onKeyDown={event => { if (event.key === "Escape") finish(); }}>
-    <div className="tour-card">
+    onKeyDown={event => {
+      if (event.key === "Escape") { finish(); return; }
+      if (event.key !== "Tab") return;
+      const nodes = cardRef.current?.querySelectorAll<HTMLElement>("button, [href], input, select, textarea");
+      if (!nodes?.length) return;
+      const list = [...nodes].filter(node => !node.hasAttribute("disabled"));
+      const first = list[0], last = list[list.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }}>
+    <div className="tour-card" ref={cardRef}>
       <button className="tour-close" type="button" aria-label="Пропустить обучение" onClick={finish}><X size={18}/></button>
       <p className="tour-step">Шаг {step + 1} из {steps.length}</p>
       <h2 id="tour-title">{current.title}</h2>

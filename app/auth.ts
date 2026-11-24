@@ -32,7 +32,15 @@ export function bookCookie(bookId: string, secure: boolean): string {
 }
 
 export const isSecureRequest = (request: Request) => new URL(request.url).protocol === "https:";
-export const clientDevice = (request: Request) => (request.headers.get("user-agent") ?? "Неизвестное устройство").slice(0, 120);
+export const clientDevice = (request: Request) => {
+  const ua = request.headers.get("user-agent") ?? "";
+  if (!ua) return "Неизвестное устройство";
+  const browser = /Edg\//.test(ua) ? "Edge" : /OPR\/|Opera/.test(ua) ? "Opera" : /Firefox\//.test(ua) ? "Firefox"
+    : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "Браузер";
+  const os = /Windows/.test(ua) ? "Windows" : /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS"
+    : /Mac OS/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : "";
+  return os ? browser + " на " + os : browser;
+};
 
 async function cookieValue(name: string): Promise<string | null> {
   const jar = await cookies();
@@ -99,7 +107,7 @@ async function sendCode(phone: string, code: string): Promise<void> {
   console.log(`[sms] код для ${phone}: ${code}`);
 }
 
-export async function issueOtp(phone: string): Promise<{ ok: true } | { error: string; status: number }> {
+export async function issueOtp(phone: string): Promise<{ ok: true; devCode?: string } | { error: string; status: number }> {
   const db = getDb();
   const now = Date.now();
   const [existing] = await db.select().from(otpChallenges).where(eq(otpChallenges.phone, phone));
@@ -112,7 +120,7 @@ export async function issueOtp(phone: string): Promise<{ ok: true } | { error: s
   const row = { phone, codeHash: hashCode(phone + ":" + code), expiresAt: new Date(now + OTP_TTL_MS).toISOString(), attempts: 0, lastSentAt: new Date(now).toISOString() };
   if (existing) await db.update(otpChallenges).set(row).where(eq(otpChallenges.phone, phone));
   else await db.insert(otpChallenges).values(row);
-  return { ok: true };
+  return { ok: true, devCode: dev ? code : undefined };
 }
 
 export async function consumeOtp(phone: string, code: unknown): Promise<{ ok: true } | { error: string; status: number }> {

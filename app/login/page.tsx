@@ -1,16 +1,16 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 
 type Mode = "login" | "register" | "reset";
 const titles: Record<Mode, string> = { login: "Вход", register: "Регистрация", reset: "Сброс пароля" };
 
-async function post(path: string, body: unknown): Promise<{ ok: boolean; error?: string }> {
+async function post(path: string, body: unknown): Promise<{ ok: boolean; error?: string; devCode?: string }> {
   const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const data = await response.json().catch(() => ({})) as { error?: string };
-  return response.ok ? { ok: true } : { ok: false, error: data.error ?? "Не получилось. Попробуйте ещё раз." };
+  const data = await response.json().catch(() => ({})) as { error?: string; devCode?: string };
+  return response.ok ? { ok: true, devCode: data.devCode } : { ok: false, error: data.error ?? "Не получилось. Попробуйте ещё раз." };
 }
 
 export default function LoginPage() {
@@ -30,6 +30,14 @@ function LoginForm() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/auth/sessions").then(response => response.ok ? response.json() : null)
+      .then(data => { const payload = data as { ok?: boolean; data?: { sessions?: unknown[] } } | null; if (alive && payload?.ok && payload.data?.sessions?.length) window.location.replace(returnTo); })
+      .catch(() => { /* анонимный посетитель остаётся на форме */ });
+    return () => { alive = false; };
+  }, [returnTo]);
+
   function switchMode(next: Mode) {
     setMode(next); setStep("form"); setError(""); setNotice(""); setCode(""); setPassword("");
   }
@@ -48,7 +56,7 @@ function LoginForm() {
         const result = await post("/api/auth/register", { phone });
         if (!result.ok) return setError(result.error!);
         setStep("code");
-        setNotice("Код отправлен на номер " + phone + ". В локальной версии код всегда 123456.");
+        setNotice("Код отправлен на номер " + phone + (result.devCode ? ". В локальной версии код: " + result.devCode : "."));
         return;
       }
       if (mode === "register" && step === "code") {
@@ -61,7 +69,7 @@ function LoginForm() {
         const result = await post("/api/auth/reset", { phone });
         if (!result.ok) return setError(result.error!);
         setStep("code");
-        setNotice("Код отправлен на номер " + phone + ". В локальной версии код всегда 123456.");
+        setNotice("Код отправлен на номер " + phone + (result.devCode ? ". В локальной версии код: " + result.devCode : "."));
         return;
       }
       const result = await post("/api/auth/reset-confirm", { phone, code, password });
@@ -77,11 +85,17 @@ function LoginForm() {
     <div className="auth-card">
       <img className="auth-logo" src="/avtobank-wordmark.webp" width={584} height={106} alt="Автобанк"/>
       <p className="auth-tagline">Учёт перепродажи автомобилей: касса, доли и прибыль — вместо Excel и чатов.</p>
-      <div className="auth-tabs" role="tablist" aria-label="Режим входа">
-        {(["login", "register", "reset"] as Mode[]).map(item =>
-          <button key={item} role="tab" aria-selected={mode === item} className={mode === item ? "auth-tab current" : "auth-tab"}
+      <div className="auth-tabs" role="tablist" aria-label="Режим входа" onKeyDown={event => {
+        if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+        event.preventDefault();
+        switchMode(mode === "login" ? "register" : "login");
+      }}>
+        {(["login", "register"] as Mode[]).map(item =>
+          <button key={item} id={"auth-tab-" + item} role="tab" aria-selected={mode === item} aria-controls="auth-panel"
+            tabIndex={mode === item ? 0 : -1} className={mode === item ? "auth-tab current" : "auth-tab"}
             onClick={() => switchMode(item)}>{titles[item]}</button>)}
       </div>
+      <div role="tabpanel" id="auth-panel" aria-labelledby={mode === "reset" ? undefined : "auth-tab-" + mode}>
       <form className="auth-form" onSubmit={submit}>
         <label className="field wide">Номер телефона
           <input type="tel" inputMode="tel" autoComplete="tel" placeholder="+7 900 000-00-00" value={phone}
@@ -108,7 +122,10 @@ function LoginForm() {
             : step === "code" ? (mode === "register" ? "Завершить регистрацию" : "Сменить пароль")
             : "Получить код"}
         </button>
+        {mode === "login" && <button type="button" className="link-button auth-reset" onClick={() => switchMode("reset")}>Забыли пароль?</button>}
+        {mode === "reset" && <button type="button" className="link-button auth-reset" onClick={() => switchMode("login")}>Вернуться ко входу</button>}
       </form>
+      </div>
       <p className="auth-footnote">Номер нужен только для входа и приглашений в общие книги. Продолжая, вы соглашаетесь на обработку номера телефона.</p>
     </div>
   </main>;

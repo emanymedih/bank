@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CalendarClock, Check, Plus, Trash2 } from "lucide-react";
 import type { Car, CarTask } from "./ledger";
+import { dateLabel } from "./format";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -48,7 +49,7 @@ export function CarTasks({ car, userName, busy, onSave }: {
         <div className="task-body">
           <strong>{task.title}</strong>
           <small>
-            {task.due && <span className={task.due < today() && !task.done ? "negative" : ""}><CalendarClock size={12} aria-hidden="true"/> {task.due < today() && !task.done ? "Просрочено · " : ""}{task.due}</span>}
+            {task.due && <span className={task.due < today() && !task.done ? "negative" : ""}><CalendarClock size={12} aria-hidden="true"/> {task.due < today() && !task.done ? "Просрочено · " : ""}{dateLabel(task.due)}</span>}
             {task.author && <span> · {task.author}</span>}
           </small>
         </div>
