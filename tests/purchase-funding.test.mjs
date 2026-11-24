@@ -7,7 +7,7 @@ import { alice, bob, expense, makeCar, makeLedger } from "./support/fixtures.mjs
 const result = await build({
   entryPoints: ["app/purchase-funding.ts"], bundle: true, write: false, platform: "node", format: "esm",
 });
-const { carFunding, fundingSnapshot } = await import("data:text/javascript;base64," + Buffer.from(result.outputFiles[0].contents).toString("base64"));
+const { carFunding, fundingSnapshot, purchaseContributionAmounts, purchaseContributionWeights } = await import("data:text/javascript;base64," + Buffer.from(result.outputFiles[0].contents).toString("base64"));
 const through = "2026-11-23";
 
 test("purchase funding uses contributions in kopecks independently of profit shares", () => {
@@ -68,4 +68,35 @@ test("profit stays with its partner until a dated future cash payout comes due",
   assert.deepEqual(fundingSnapshot(ledger, "2026-11-24").balances, { [alice.id]: 0, [bob.id]: 0 });
   assert.equal(cashSummary(ledger, "2026-11-24").spending, 11_900_000);
   assert.equal(fundingSnapshot(ledger, through).total, 0);
+});
+
+test("unassigned participants cover exactly the remaining purchase price", () => {
+  assert.deepEqual(purchaseContributionAmounts(92_000_000, [32_000_000, null]), [32_000_000, 60_000_000]);
+  assert.deepEqual(purchaseContributionAmounts(101, [20, null, null]), [20, 41, 40]);
+  assert.deepEqual(purchaseContributionAmounts(101, [0, null]), [0, 101]);
+  assert.equal(purchaseContributionAmounts(100, [101, null]), null);
+  assert.equal(purchaseContributionAmounts(100, [NaN, null]), null);
+});
+
+test("purchase percentages conserve 100 percent at two decimals", () => {
+  assert.deepEqual(purchaseContributionWeights([32_000_000, 60_000_000]), [3478, 6522]);
+  assert.deepEqual(purchaseContributionWeights([1, 1, 1]), [3334, 3333, 3333]);
+  assert.deepEqual(purchaseContributionWeights([1, 0]), [10000, 0]);
+  assert.deepEqual(purchaseContributionWeights([0, 0]), [5000, 5000]);
+  assert.deepEqual(purchaseContributionWeights([99_999_999_999, 1]), [10000, 0]);
+});
+
+test("proportional profit and loss agree with a manual calculation while purchase funding stays exact", () => {
+  const contributions = purchaseContributionAmounts(80_000_000, [30_000_000, null]);
+  const weights = purchaseContributionWeights(contributions);
+  const car = makeCar({
+    buy: 80_000_000, sold: "2026-10-20", price: 100_000_000,
+    shares: makeCar().shares.map((share, index) => ({ ...share, buy: contributions[index], weight: weights[index] })),
+  });
+  const profit = makeLedger(car);
+  const loss = makeLedger({ ...car, price: 72_000_000 });
+  assert(validLedger(profit));
+  assert(validLedger(loss));
+  assert.deepEqual(fundingSnapshot(profit, through).balances, { [alice.id]: 7_500_000, [bob.id]: 12_500_000 });
+  assert.deepEqual(fundingSnapshot(loss, through).balances, { [alice.id]: -3_000_000, [bob.id]: -5_000_000 });
 });
