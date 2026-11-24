@@ -103,7 +103,7 @@ h1 { font-size: 1.75rem; letter-spacing: -.04em; }
 }
 .stage-card {
   display: flex; justify-content: space-between; align-items: center; gap: 4px;
-  min-width: 0; min-height: 51px; padding: 7px 12px; border: 1px solid transparent; border-radius: 10px;
+  min-width: 0; min-height: 51px; padding: 7px 12px; border: 1px solid transparent;
   color: var(--stage-ink); background: var(--stage-surface); text-align: left;
   font-weight: 800; font-size: .875rem; transition: background-color var(--control-motion), border-color var(--control-motion);
 }
@@ -520,7 +520,7 @@ h1 { font-size: 1.75rem; letter-spacing: -.04em; }
 .work-registry .deal-table tbody tr:hover td { background: var(--surface-soft); }
 .work-registry .deal-table tbody tr.selected-row td { background: #eef5da; }
 .stage-board { gap: 8px; }
-.stage-card { background: var(--surface); border: 1px solid var(--line-soft); border-top: 3px solid var(--stage-ink); border-radius: 0; text-align: left; padding: 10px 12px; }
+.stage-card { background: var(--surface); border: 1px solid var(--line-soft); border-top: 3px solid var(--stage-ink); text-align: left; padding: 10px 12px; }
 .stage-card:hover { border-color: var(--stage-ink); }
 .stage-card[aria-pressed="true"] { color: var(--ink); background: var(--stage-surface); border-color: var(--stage-ink); }
 .drawer { border-radius: 0; border-left: 1px solid var(--line); }
@@ -545,6 +545,8 @@ h1 { font-size: 1.75rem; letter-spacing: -.04em; }
 .status-close::after, .tour-close::after { content: ""; position: absolute; inset: -11px; }
 .link-button { display: inline-flex; align-items: center; min-height: 32px; }
 .finance-def { display: block; color: var(--muted); font-size: .75rem; font-weight: 400; margin-top: 2px; }
+.cover-toggle button { position: relative; }
+.cover-toggle button::after { content: ""; position: absolute; inset: -10px; }
 .drawer .status-line, .desktop-inspector .status-line { margin: 8px 12px 0; }
 @media (max-width: 650px) {
   .link-button { min-height: 44px; }

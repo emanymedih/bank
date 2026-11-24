@@ -24,6 +24,7 @@ export function FinanceStrip({ cash, retained, invested, rub, onCash }: {
       <dd><strong>{cash === null ? "—" : rub(cash)}</strong>
         <button type="button" onClick={onCash}>{cash === null ? "Добавить остаток" : tone === "negative" ? "Разобрать в кассе" : "Открыть кассу"}<ArrowRight size={15} aria-hidden="true"/></button>
         {tone === "negative" && <small className="finance-note">Списания превышают поступления на {rub(overdraftAmount(cash))}</small>}
+        {tone !== "negative" && <small className="finance-def">Все поступления минус списания</small>}
       </dd>
     </div>
     <div><dt title="Прибыль проданных автомобилей, которая осталась в бизнесе, а не выплачена партнёрам.">Накопленная прибыль</dt><dd><strong>{rub(retained)}</strong><small className="finance-def">Прибыль проданных авто, оставленная в бизнесе</small></dd></div>

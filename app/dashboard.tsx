@@ -439,7 +439,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         <div className="header-right">
           {view === "cars" && <button className="button secondary export" aria-label="Экспорт CSV" onClick={() => exportLedger(ledger, currentDate)} disabled={!loaded}><Download size={16}/><span>CSV</span></button>}
           {view !== "analytics" && view !== "feed" && <button className="button primary" onClick={() => open({ type: view === "cars" ? "car" : view === "cash" ? "cash" : "partner" })}
-            disabled={!loaded || !canEdit}><Plus size={19}/><span>{view === "cars" ? "Добавить авто" : view === "cash" ? "Добавить движение" : "Добавить партнёра"}</span></button>}
+            disabled={!loaded || !canEdit} title={view === "cars" ? "Новое авто: клавиша n" : undefined}><Plus size={19}/><span>{view === "cars" ? "Добавить авто" : view === "cash" ? "Добавить движение" : "Добавить партнёра"}</span></button>}
         </div>
       </header>
       <div className="content workspace-content">
