@@ -250,6 +250,13 @@ input[type=checkbox] { accent-color: var(--brand); width: 17px; height: 17px; ma
 .manual-choice { min-height: 27px; }
 .share-inputs { display: grid; grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, 1fr)); gap: 7px; align-items: end; padding-top: 8px; font-size: .875rem; }
 .share-inputs b { padding: 0 0 10px; }
+.share-inputs b { overflow-wrap: anywhere; }
+.share-help { margin: 7px 0 1px; font-size: .8125rem; line-height: 1.4; color: var(--muted); }
+.share-help.negative { color: var(--bad); }
+.share-percentage { min-height: 40px; display: flex; align-items: center; font-variant-numeric: tabular-nums; }
+.profit-choice { margin-top: 9px; }
+.profit-inputs { grid-template-columns: minmax(0, 1.3fr) minmax(0, 2fr); }
+
 .share-preview { display: flex; justify-content: space-between; gap: 7px; padding: 5px 0; font-size: .875rem; color: var(--muted); }
 .form-footer { margin-top: 16px; display: flex; justify-content: flex-end; gap: 8px; }
 .form-error { padding: 9px 10px; background: #fff1f1; border-radius: 7px; color: var(--bad); font-size: .875rem; margin-top: 10px; line-height: 1.4; }

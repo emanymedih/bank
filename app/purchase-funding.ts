@@ -1,7 +1,33 @@
-import { totals } from "./ledger";
+import { defaultWeights, totals } from "./ledger";
 import type { Car, Ledger, Partner } from "./ledger";
 
 export type FundingMode = "invested" | "purchase";
+
+export function purchaseContributionAmounts(price: number, fixed: (number | null)[]) {
+  if (!Number.isSafeInteger(price) || price < 0 || fixed.some(amount => amount !== null && (!Number.isSafeInteger(amount) || amount < 0))) return null;
+  const remaining = price - fixed.reduce<number>((sum, amount) => sum + (amount ?? 0), 0);
+  const automatic = fixed.filter(amount => amount === null).length;
+  if (remaining < 0 || (!automatic && remaining !== 0)) return null;
+  const equal = automatic ? Math.floor(remaining / automatic) : 0;
+  let remainder = automatic ? remaining % automatic : 0;
+  return fixed.map(amount => {
+    if (amount !== null) return amount;
+    if (remainder === 0) return equal;
+    remainder--;
+    return equal + 1;
+  });
+}
+
+export function purchaseContributionWeights(amounts: number[]) {
+  const total = amounts.reduce((sum, amount) => sum + amount, 0);
+  if (!total) return defaultWeights(amounts.length);
+  const weights = amounts.map(amount => Math.floor(amount * 10_000 / total));
+  const priority = amounts.map((amount, index) => ({ index, remainder: amount * 10_000 % total }))
+    .sort((a, b) => b.remainder - a.remainder);
+  const left = 10_000 - weights.reduce((sum, weight) => sum + weight, 0);
+  for (const { index } of priority.slice(0, left)) weights[index]++;
+  return weights;
+}
 
 export function fundingSources(partners: Partner[]) {
   return [

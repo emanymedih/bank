@@ -23,6 +23,13 @@ export function formatRussianPlate(value: string) {
   return russian.test(plateKey(value)) ? normalizePlate(value) : null;
 }
 
+export function plateFromParts(main: string, region: string) {
+  const prefix = plateKey(main);
+  const suffix = plateKey(region);
+  if (!/^[ABEKMHOPCTYX][0-9]{3}[ABEKMHOPCTYX]{2}$/.test(prefix) || !/^\d{2,3}$/.test(suffix)) return null;
+  return formatRussianPlate(prefix + suffix);
+}
+
 export function plateCandidates(text: string) {
   const clean = (value: string) => plateKey(value).replace(/RUS/g, "");
   const lines = text.split(/\r?\n/).filter(line => line.trim());

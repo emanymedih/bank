@@ -14,6 +14,7 @@ import { alignPurchaseStage, initializeStageHistory, recordStageChange } from ".
 import { BatchExpenseForm } from "./batch-expenses";
 import type { CashTab } from "./insights";
 import { VehicleFunding } from "./funding-view";
+import { purchaseContributionAmounts, purchaseContributionWeights } from "./purchase-funding";
 import type { FundingMode } from "./purchase-funding";
 import { parsePartList, PartPlan, preparePhotos, WorkHistory } from "./car-prep";
 import { downloadBuyerReport } from "./car-report";
@@ -26,7 +27,7 @@ import { formatRussianPlate, normalizePlate, plateKey } from "../lib/license-pla
 import type { PlateDetails } from "../lib/license-plate";
 import type { Car, CarPart, CarPhoto, CashEntry, Expense, Ledger, Partner, PhotoPhase, ProfitPayout, WorkEntry } from "./ledger";
 
-const sectionNames = { cars: "Автомобили", partners: "Партнёры", analytics: "Аналитика", cash: "Касса" };
+const sectionNames = { cars: "Автомобили", partners: "Мои партнёры", analytics: "Аналитика", cash: "Касса" };
 type View = keyof typeof sectionNames;
 const navigation = [
   { id: "cars", icon: LayoutDashboard }, { id: "cash", icon: Wallet },
@@ -780,13 +781,43 @@ function CarForm({ car, partners, knownCars, signedIn, error, setError, busy, on
   const [lookupBusy, setLookupBusy] = useState(false);
   const [plateMessage, setPlateMessage] = useState("");
   const [buyInput, setBuyInput] = useState(car ? moneyText(car.buy) : "");
-  const [manual, setManual] = useState(Boolean(car && car.shares.length > 1));
+  const [manual, setManual] = useState(Boolean(car && car.shares.length > 1 && !car.cashPurchase));
   const [cashPurchase, setCashPurchase] = useState(Boolean(car?.cashPurchase));
-  const [selectedPartners, setSelectedPartners] = useState(partners.filter(p => !car || car.shares.some(s => s.partner === p.id && (s.weight || s.buy))).map(p => p.id));
-  const included = partners.filter(p => selectedPartners.includes(p.id));
-  const ratios = defaultWeights(included.length || 1);
+  const [selectedPartners, setSelectedPartners] = useState(car ? car.shares.map(share => share.partner) : partners.map(p => p.id));
+  const [contributionInputs, setContributionInputs] = useState<Record<string, string>>(() => Object.fromEntries(
+    car?.cashPurchase ? [] : (car?.shares ?? []).map(share => [share.partner, moneyText(share.buy)]),
+  ));
+  const [customWeights, setCustomWeights] = useState(() => {
+    if (!car) return false;
+    const expected = purchaseContributionWeights(car.shares.map(share => share.buy));
+    return Boolean(car.sold && !car.cashPurchase && car.shares.length > 1)
+      || car.shares.some((share, index) => share.weight !== expected[index]);
+  });
+  const [weightInputs, setWeightInputs] = useState<Record<string, string>>(() => Object.fromEntries(
+    (customWeights ? car?.shares ?? [] : []).map(share => [share.partner, moneyText(share.weight)]),
+  ));
+  const originalOrder = car?.shares.map(share => share.partner) ?? [];
+  const order = [...new Set([...originalOrder, ...partners.map(p => p.id)])];
+  const included = order.filter(id => selectedPartners.includes(id)).flatMap(id => partners.find(p => p.id === id) ?? []);
+  const equalWeights = included.length ? defaultWeights(included.length) : [];
+  const draftValue = (draft: Record<string, string>, id: string) => Object.hasOwn(draft, id) ? draft[id] : undefined;
   const buyValid = parseMoney(buyInput);
-  const preview = splitAmount(!cashPurchase && Number.isFinite(buyValid) ? buyValid : 0, ratios);
+  const hasPrice = range(buyValid, 1, 100_000_000_000);
+  const fixed = included.map(p => {
+    const draft = draftValue(contributionInputs, p.id);
+    return manual && included.length > 1 && draft?.trim() ? parseMoney(draft) : null;
+  });
+  const fixedTotal = fixed.reduce<number>((sum, amount) => sum + (amount ?? 0), 0);
+  const amounts = cashPurchase ? included.map(() => 0) : hasPrice ? purchaseContributionAmounts(buyValid, fixed) : null;
+  const proportions = amounts && !cashPurchase ? purchaseContributionWeights(amounts) : null;
+  const suggestedWeights = proportions ?? equalWeights;
+  const weights = customWeights && included.length > 1 ? included.map((p, index) => parseMoney(draftValue(weightInputs, p.id) ?? moneyText(suggestedWeights[index]))) : suggestedWeights;
+  let contributionError = "";
+  if (!cashPurchase && manual && hasPrice && !amounts) {
+    contributionError = !Number.isFinite(fixedTotal) ? "Проверьте суммы взносов."
+      : fixedTotal > buyValid ? "Взносы превышают цену покупки на " + rub(fixedTotal - buyValid) + "."
+      : "До цены покупки не хватает " + rub(buyValid - fixedTotal) + ". Очистите поле, чтобы рассчитать остаток.";
+  }
 
   useEffect(() => {
     if (!signedIn) return;
@@ -869,10 +900,11 @@ function CarForm({ car, partners, knownCars, signedIn, error, setError, busy, on
     if (car?.sold && bought > car.sold) { setError("Дата покупки должна быть до продажи или совпадать с ней."); return; }
     if (car?.works?.some(work => work.date < bought)) { setError("Дата покупки должна быть до первой работы или совпадать с ней."); return; }
     if (car?.expenses.some(e => e.date < bought)) { setError("Дата покупки должна быть до первого расхода или совпадать с ним."); return; }
+    if (!amounts) { setError(contributionError || "Проверьте взносы участников."); return; }
     const shares = included.map((p, index) => ({
       partner: p.id,
-      buy: cashPurchase ? 0 : manual ? parseMoney(values.get("buy-" + p.id) || "0") : preview[index],
-      weight: manual ? parseMoney(values.get("weight-" + p.id) || "0") : ratios[index],
+      buy: amounts[index],
+      weight: weights[index],
       withdrawn: car?.shares.find(s => s.partner === p.id)?.withdrawn ?? false,
       cashWithdrawalDate: car?.shares.find(s => s.partner === p.id)?.cashWithdrawalDate,
       payouts: car?.shares.find(s => s.partner === p.id)?.payouts,
@@ -883,7 +915,6 @@ function CarForm({ car, partners, knownCars, signedIn, error, setError, busy, on
     if (shares.some(s => !range(s.buy, 0, buyValid) || !range(s.weight, 0, 10_000))) {
       setError("Введите суммы взносов и проценты от 0 до 100."); return;
     }
-    if (shares.reduce((sum, s) => sum + s.buy, 0) !== (cashPurchase ? 0 : buyValid)) { setError("Сумма взносов должна совпадать с ценой покупки."); return; }
     if (shares.reduce((sum, s) => sum + s.weight, 0) !== 10_000) { setError("Доли прибыли должны давать 100%."); return; }
     await onSave(alignPurchaseStage({ ...car, id: car?.id ?? crypto.randomUUID(), name, vin, registration: savedRegistration || undefined, year, mileage, bought, buy: buyValid, cashPurchase,
       sold: car?.sold ?? null, price: car?.price ?? null, shares, expenses: car?.expenses ?? [] }));
@@ -921,15 +952,37 @@ function CarForm({ car, partners, knownCars, signedIn, error, setError, busy, on
         <input type="checkbox" checked={selectedPartners.includes(p.id)} onChange={e => {
           setSelectedPartners(e.target.checked ? [...selectedPartners, p.id] : selectedPartners.filter(id => id !== p.id));
         }}/>{p.name}</label>)}</div>
-      <label className="manual-choice"><input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)}/> {cashPurchase ? "Задать доли вручную" : "Задать взносы и доли вручную"}</label>
+      {!cashPurchase && included.length > 1 && <label className="manual-choice"><input type="checkbox" checked={manual}
+        onChange={e => { setManual(e.target.checked); setError(""); }}/> Задать взносы вручную</label>}
+      {manual && !cashPurchase && included.length > 1 && <p className="share-help" id="contribution-help">Укажите известные взносы. Остаток цены распределится между участниками без заданной суммы. Доли пересчитываются по цене покупки.</p>}
       {included.map((p, index) => {
-        const old = car?.shares.find(s => s.partner === p.id);
-        return manual ? <div className="share-inputs" key={p.id}>
+        const amount = amounts?.[index];
+        const percent = proportions ? format.format(proportions[index] / 100) + " %" : "—";
+        const draft = draftValue(contributionInputs, p.id);
+        return !cashPurchase && manual && included.length > 1 ? <div className="share-inputs contribution-inputs" key={p.id}>
           <b>{p.name}</b>
-          {cashPurchase ? <span/> : <label className="field">Взнос, ₽<MoneyField name={"buy-" + p.id} value={moneyText((car?.cashPurchase ? undefined : old?.buy) ?? preview[index])} required={false}/></label>}
-          <label className="field">Доля прибыли или убытка, %<MoneyField name={"weight-" + p.id} value={moneyText(old?.weight ?? ratios[index])} required={false}/></label>
-        </div> : <div className="share-preview" key={p.id}><span>{p.name}</span><span>{cashPurchase ? "" : rub(preview[index]) + " · "}{format.format(ratios[index] / 100)}%</span></div>;
+          <label className="field">Взнос, ₽<input inputMode="decimal" maxLength={18} aria-label={"Взнос, ₽ · " + p.name} aria-describedby="contribution-help"
+            value={draft ?? (amount === undefined ? "" : moneyText(amount))} placeholder={amount === undefined ? "0" : moneyText(amount)}
+            onChange={e => { setContributionInputs({ ...contributionInputs, [p.id]: e.target.value }); setError(""); }}/></label>
+          <div className="field">Доля покупки<strong className="share-percentage">{percent}</strong></div>
+        </div> : <div className="share-preview" key={p.id}><span>{p.name}</span><span>{cashPurchase
+          ? Number.isFinite(weights[index]) ? format.format(weights[index] / 100) + " %" : "—" : amount === undefined ? "—" : rub(amount) + " · " + percent}</span></div>;
       })}
+      {contributionError && <p className="share-help negative" aria-live="polite">{contributionError}</p>}
+      {included.length > 1 && <label className="manual-choice profit-choice"><input type="checkbox" checked={customWeights}
+        onChange={e => {
+          if (e.target.checked) setWeightInputs(previous => ({
+            ...Object.fromEntries(included.map((p, index) => [p.id, moneyText(suggestedWeights[index])])), ...previous,
+          }));
+          setCustomWeights(e.target.checked); setError("");
+        }}/> Задать доли прибыли или убытка отдельно</label>}
+      {included.length > 1 && (customWeights ? included.map((p, index) => <div className="share-inputs profit-inputs" key={p.id}>
+        <b>{p.name}</b>
+        <label className="field">Доля прибыли или убытка, %<input inputMode="decimal" maxLength={18}
+          aria-label={"Доля прибыли или убытка, % · " + p.name}
+          value={draftValue(weightInputs, p.id) ?? moneyText(suggestedWeights[index])}
+          onChange={e => { setWeightInputs({ ...weightInputs, [p.id]: e.target.value }); setError(""); }}/></label>
+      </div>) : <p className="share-help">{cashPurchase ? "Прибыль или убыток делятся поровну." : "Прибыль или убыток делятся по долям покупки."}</p>)}
     </details>
     <FormFooter error={error} busy={busy} onCancel={onCancel}/>
   </form>;
