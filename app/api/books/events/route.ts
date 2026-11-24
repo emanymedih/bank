@@ -6,7 +6,7 @@ import { getCurrentBook, getSessionUser } from "../../../auth";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
 const reply = (body: unknown, status = 200) => Response.json(body, { status, headers });
-const entities = new Set(["car", "expense", "cash", "partner", "payout"]);
+const entities = new Set(["car", "expense", "cash", "partner", "payout", "task", "part"]);
 
 function parseJson(value: string | null): unknown {
   if (value === null) return null;

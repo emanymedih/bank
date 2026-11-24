@@ -1,9 +1,9 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDb } from "../db";
-import { memberships, otpChallenges, sessions, users } from "../db/schema";
+import { memberships, otpChallenges, rateLimits, sessions, users } from "../db/schema";
 import { hashCode, hashPassword, verifyPassword } from "../lib/password";
 
 export { hashCode, hashPassword, verifyPassword };
@@ -129,3 +129,25 @@ export async function consumeOtp(phone: string, code: unknown): Promise<{ ok: tr
 }
 
 export const newId = () => randomUUID();
+
+// Публичный идентификатор сеанса: сам токен cookie наружу не отдаём.
+export const publicSessionId = (token: string) => createHash("sha256").update(token).digest("hex").slice(0, 32);
+
+export const clientIp = (request: Request) =>
+  request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "local";
+
+// Скользящее окно: true — запрос разрешён, false — лимит исчерпан.
+export async function rateLimit(key: string, limit: number, windowMs: number): Promise<boolean> {
+  const db = getDb();
+  const now = Date.now();
+  const [row] = await db.select().from(rateLimits).where(eq(rateLimits.key, key));
+  if (!row || now - Date.parse(row.windowStart) >= windowMs) {
+    const fresh = { hits: 1, windowStart: new Date(now).toISOString() };
+    if (row) await db.update(rateLimits).set(fresh).where(eq(rateLimits.key, key));
+    else await db.insert(rateLimits).values({ key, ...fresh });
+    return true;
+  }
+  if (row.hits >= limit) return false;
+  await db.update(rateLimits).set({ hits: row.hits + 1 }).where(eq(rateLimits.key, key));
+  return true;
+}

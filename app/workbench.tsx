@@ -2,7 +2,7 @@
 
 import { ArrowRight, CarFront, ChevronDown, ClipboardList, Clock3, ReceiptText, Search, Wallet } from "lucide-react";
 import { VehicleMark } from "./vehicle-mark";
-import { figures, stageNames, vehicleStage, vehicleStages } from "./ledger";
+import { figures, nextTask, stageNames, vehicleStage, vehicleStages } from "./ledger";
 import type { Car, Ledger, VehicleStage, totals } from "./ledger";
 
 export type CarFilter = "all" | "active" | VehicleStage;
@@ -28,15 +28,21 @@ export function FinanceStrip({ cash, retained, invested, rub, onCash }: {
   </dl>;
 }
 
-export function StageBoard({ cars, today, filter, onFilter }: {
-  cars: Car[]; today: string; filter: CarFilter; onFilter: (stage: CarFilter) => void;
+export function StageBoard({ cars, today, filter, onFilter, rub }: {
+  cars: Car[]; today: string; filter: CarFilter; onFilter: (stage: CarFilter) => void; rub: (value: number) => string;
 }) {
   const counts: Record<VehicleStage, number> = { purchased: 0, preparation: 0, listed: 0, sold: 0 };
-  for (const car of cars) if (car.bought <= today) counts[vehicleStage(car, today)]++;
+  const invested: Record<VehicleStage, number> = { purchased: 0, preparation: 0, listed: 0, sold: 0 };
+  for (const car of cars) if (car.bought <= today) {
+    const stage = vehicleStage(car, today);
+    counts[stage]++;
+    invested[stage] += figures(car, today).invested;
+  }
   return <div className="stage-board" role="group" aria-label="Этапы продажи">
     {stages.map(stage => <button key={stage} type="button" className={"stage-card stage-card-" + stage}
       aria-pressed={filter === stage} onClick={() => onFilter(filter === stage ? "all" : stage)}>
       <span>{stageNames[stage]}</span><strong>{counts[stage]}</strong>
+      <small className="stage-invested">{counts[stage] ? "вложено " + rub(invested[stage]) : "пока пусто"}</small>
     </button>)}
   </div>;
 }
@@ -51,22 +57,27 @@ function stepTiming(car: Car, today: string, dateLabel: (value: string) => strin
 export function ActionQueue({ cars, today, dateLabel, onOpen, onPlan }: {
   cars: Car[]; today: string; dateLabel: (value: string) => string; onOpen: (id: string) => void; onPlan: (id: string) => void;
 }) {
+  // Шаг = явный «следующий шаг» или ближайшая открытая задача по машине.
+  const step = (car: Car) => car.nextAction ?? (() => {
+    const task = nextTask(car);
+    return task ? { title: task.title, due: task.due } : undefined;
+  })();
   const active = cars.filter(car => car.bought <= today && !car.sold);
-  const dated = active.filter(car => car.nextAction).sort((a, b) =>
-    (a.nextAction?.due ?? "9999").localeCompare(b.nextAction?.due ?? "9999"));
-  const unplanned = active.filter(car => !car.nextAction);
+  const dated = active.filter(car => step(car)).sort((a, b) =>
+    (step(a)?.due ?? "9999").localeCompare(step(b)?.due ?? "9999"));
+  const unplanned = active.filter(car => !step(car));
   const visible = [...dated, ...unplanned].slice(0, 5);
-  const overdue = dated.filter(car => car.nextAction?.due && car.nextAction.due < today).length;
+  const overdue = dated.filter(car => step(car)?.due && step(car)!.due! < today).length;
 
   return <section className="action-queue" aria-labelledby="next-steps-title">
     <header><h2 id="next-steps-title">Следующие шаги</h2><Clock3 size={17} aria-hidden="true"/></header>
     {overdue > 0 && <p className="queue-overdue">{overdue} с истёкшим сроком</p>}
     {visible.length ? <ul>
       {visible.map(car => <li key={car.id}>
-        <button onClick={() => car.nextAction ? onOpen(car.id) : onPlan(car.id)}>
+        <button onClick={() => step(car) ? onOpen(car.id) : onPlan(car.id)}>
           <span className="queue-car">{car.name}</span>
-          <strong>{car.nextAction?.title ?? "Запланировать шаг"}</strong>
-          {car.nextAction?.due && <small className={car.nextAction.due < today ? "negative" : ""}>{stepTiming(car, today, dateLabel)}</small>}
+          <strong>{step(car)?.title ?? "Запланировать шаг"}</strong>
+          {step(car)?.due && <small className={step(car)!.due! < today ? "negative" : ""}>{step(car)!.due! < today ? "Просрочено · " + dateLabel(step(car)!.due!) : step(car)!.due === today ? "Сегодня" : dateLabel(step(car)!.due!)}</small>}
         </button>
       </li>)}
     </ul> : <p className="queue-empty">Шаги появятся после добавления автомобиля.</p>}
@@ -92,6 +103,8 @@ type RegistryProps = {
   onMode: (value: RegistryMode) => void;
   onSelect: (id: string) => void;
   onAdd: () => void;
+  pinned?: boolean;
+  onPin?: () => void;
 };
 
 function profitText(value: number | null, rub: RegistryProps["rub"]) {
@@ -127,6 +140,9 @@ export function VehicleRegistry(props: RegistryProps) {
           <ReceiptText size={16}/> Расчёты
         </button>
       </div>
+      {props.onPin && <button type="button" className="pin-filter" aria-pressed={Boolean(props.pinned)} onClick={props.onPin}>
+        {props.pinned ? "Фильтр закреплён · сбросить" : "Закрепить фильтр"}
+      </button>}
     </div>
     <div className="stage-filters" role="group" aria-label="Охват реестра">
       {filters.map(([value, label, amount]) => <button key={value} type="button" aria-pressed={filter === value}
@@ -182,9 +198,9 @@ export function VehicleRegistry(props: RegistryProps) {
                 </> : "—"}</td>)}
                 <td className="num">{snapshot ? rub(snapshot.bank) : "—"}</td>
               </> : <>
-                <td className="step-cell">{!car.sold && car.nextAction ? <>
-                  <b>{car.nextAction.title}</b>
-                  {car.nextAction.due && <small className={car.nextAction.due < currentDate ? "negative" : "cell-caption"}>{stepTiming(car, currentDate, dateLabel)}</small>}
+                <td className="step-cell">{!car.sold && (car.nextAction ?? nextTask(car)) ? <>
+                  <b>{(car.nextAction ?? nextTask(car))!.title}</b>
+                  {(car.nextAction ?? nextTask(car))!.due && <small className={(car.nextAction ?? nextTask(car))!.due! < currentDate ? "negative" : "cell-caption"}>{stepTiming({ ...car, nextAction: car.nextAction ?? nextTask(car) }, currentDate, dateLabel)}</small>}
                 </> : <span className="muted">—</span>}</td>
                 <td className="num invested-cell">{car.bought <= currentDate ? rub(calc.invested) : "—"}</td>
                 <td className="num sale-cell">{car.price === null ? car.askingPrice ? <>{rub(car.askingPrice)}<small className="cell-caption">Объявление</small></> : "—" : rub(car.price)}</td>
@@ -203,8 +219,8 @@ export function VehicleRegistry(props: RegistryProps) {
           <span className="mobile-car-top"><span className="vehicle"><VehicleMark name={car.name} className="vehicle-icon"/><span>
             <b>{car.name}</b><small>{rowDescription(car, props)}</small>
           </span></span><StageLabel stage={vehicleStage(car, currentDate)}/></span>
-          {!detailed && !car.sold && car.nextAction && <span className="mobile-step">
-            <b>{car.nextAction.title}</b><small>{stepTiming(car, currentDate, dateLabel)}</small>
+          {!detailed && !car.sold && (car.nextAction ?? nextTask(car)) && <span className="mobile-step">
+            <b>{(car.nextAction ?? nextTask(car))!.title}</b><small>{stepTiming({ ...car, nextAction: car.nextAction ?? nextTask(car) }, currentDate, dateLabel)}</small>
           </span>}
           <span className="mobile-car-bottom">
             <span><small>{detailed ? "Покупка" : "Вложено"}</small><b>{detailed || car.bought <= currentDate ? rub(detailed ? car.buy : calc.invested) : "—"}</b></span>

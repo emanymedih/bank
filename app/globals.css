@@ -601,3 +601,44 @@ body { background: radial-gradient(ellipse at 90% 6%, #d5e7ff 0, transparent 43%
 .feed-lines li { font-size: .875rem; line-height: 1.5; padding-left: 14px; position: relative; }
 .feed-lines li::before { content: ""; position: absolute; left: 0; top: .55em; width: 6px; height: 6px; border-radius: 50%; background: #cfe0d4; }
 .feed-more { justify-self: start; }
+/* Фаза 3: задачи, предпросмотр, тур, итоги этапов, закреплённый фильтр */
+.stage-invested { display: block; font-size: .72rem; color: var(--muted); font-weight: 500; margin-top: 2px; }
+.pin-filter { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 10px; font-size: .78rem; color: var(--muted); cursor: pointer; }
+.pin-filter[aria-pressed="true"] { border-color: var(--brand); color: var(--brand); font-weight: 650; }
+.car-tasks { display: grid; gap: 14px; align-content: start; }
+.task-add { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: end; }
+.task-add .button { height: 40px; }
+.task-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.task-list li { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fff; }
+.task-list li.done { opacity: .62; }
+.task-list li.done .task-body strong { text-decoration: line-through; }
+.task-check { width: 22px; height: 22px; flex-shrink: 0; margin-top: 2px; border: 1.5px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; display: grid; place-items: center; color: #fff; }
+.task-check[aria-pressed="true"] { background: var(--brand); border-color: var(--brand); }
+.task-body { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.task-body strong { font-size: .9rem; font-weight: 620; }
+.task-body small { color: var(--muted); font-size: .76rem; display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.task-body small .negative { color: var(--negative, #b3261e); font-weight: 600; }
+.task-remove { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 4px; border-radius: 6px; }
+.task-remove:hover { color: #b3261e; background: #fdecea; }
+.change-preview { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 14px; background: #f8faf8; display: grid; gap: 6px; }
+.change-preview strong { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.change-preview ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: .86rem; }
+.feed-collapse { border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.feed-collapse summary { cursor: pointer; padding: 10px 14px; font-size: .875rem; font-weight: 620; color: var(--muted); }
+.feed-collapse[open] summary { border-bottom: 1px solid var(--line); }
+.feed-collapse .activity-feed { border: 0; padding: 12px 14px; }
+.tour-overlay { position: fixed; inset: 0; z-index: 90; background: rgba(18, 28, 22, .55); display: grid; place-items: center; padding: 20px; }
+.tour-card { position: relative; width: min(430px, 100%); background: #fff; border-radius: 16px; padding: 28px 28px 22px; display: grid; gap: 12px; box-shadow: 0 24px 60px rgba(10, 20, 14, .35); }
+.tour-close { position: absolute; top: 12px; right: 12px; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 6px; border-radius: 8px; }
+.tour-close:hover { background: #f1f4f1; }
+.tour-step { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--brand); font-weight: 700; }
+.tour-card h2 { font-size: 1.25rem; line-height: 1.25; }
+.tour-text { color: var(--muted); font-size: .92rem; line-height: 1.55; }
+.tour-dots { display: flex; gap: 6px; }
+.tour-dots i { width: 7px; height: 7px; border-radius: 50%; background: #d8e0d9; }
+.tour-dots i.active { background: var(--brand); width: 18px; border-radius: 4px; }
+.tour-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; }
+@media (max-width: 640px) { .task-add { grid-template-columns: 1fr; } }
+.registry-top { flex-wrap: wrap; align-items: center; }
+
+.viewer-note { border: 1px solid var(--line); background: #f4f7f4; border-radius: 10px; padding: 10px 14px; font-size: .875rem; color: var(--muted); }

@@ -24,7 +24,7 @@ export const maxCarPhotos = 64;
 export const maxPhotoBytes = 1_200_000;
 export const maxPhotosPerUpload = 8;
 export const maxLedgerBytes = 750_000;
-export const ledgerClientVersion = 4;
+export const ledgerClientVersion = 5;
 
 const workEntry = z.object({
   id, name: z.string().trim().min(1).max(100), date: day, notes: z.string().trim().max(750),
@@ -43,6 +43,12 @@ const carPart = z.object({
   article: z.string().trim().max(120).optional(), link: partLink.optional(),
   acquired: z.boolean(), plannedPrice: money.positive().optional(), expenseId: id.optional(),
 });
+// Общие задачи по машине: видны всем участникам книги, не влияют на деньги.
+const carTask = z.object({
+  id, title: z.string().trim().min(1).max(120), due: day.optional(),
+  done: z.boolean(), author: z.string().trim().max(70).optional(), createdAt: day,
+});
+export type CarTask = z.infer<typeof carTask>;
 export const vehicleStages = ["purchased", "preparation", "listed"] as const;
 export const stageHistoryEntry = z.object({
   stage: z.enum(vehicleStages), date: day, source: z.literal("purchase").optional(),
@@ -67,6 +73,8 @@ const vehicle = z.object({
   works: z.array(workEntry).max(100).optional(),
   photos: z.array(carPhoto).max(maxCarPhotos).optional(),
   parts: z.array(carPart).max(100).optional(),
+  tasks: z.array(carTask).max(200).optional(),
+  listingUrl: partLink.optional(),
   shares: z.array(share).min(1).max(16), expenses: z.array(expense).max(500), demo: z.boolean().optional(),
 });
 const cashAllocation = z.object({ partner: id, amount: money.positive() });
@@ -103,6 +111,12 @@ export function vehicleStage(car: Car, through?: string): VehicleStage {
   const stage = through && history?.length ? history.findLast(entry => entry.date <= through)?.stage : car.stage;
   const completedWork = (item: { date: string }) => !through || item.date <= through;
   return stage ?? (car.expenses.some(completedWork) || car.works?.some(completedWork) ? "preparation" : "purchased");
+}
+
+// Ближайшая открытая задача: сначала по сроку, затем по дате создания.
+export function nextTask(car: Car): CarTask | undefined {
+  return (car.tasks ?? []).filter(item => !item.done)
+    .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.createdAt.localeCompare(b.createdAt))[0];
 }
 
 function validStageHistory(car: Car) {
@@ -149,6 +163,7 @@ export function parseLedger(value: unknown): Ledger | null {
       && unique(c.expenses.map(e => e.id))
       && workIds.size === (c.works ?? []).length
       && unique((c.parts ?? []).map(part => part.id))
+      && unique((c.tasks ?? []).map(item => item.id))
       && unique(partExpenses) && partExpenses.every(expenseId => expenses.has(expenseId))
       && unique(photos.map(photo => photo.id))
       && photos.every(photo => photo.phase === "work" ? Boolean(photo.workId && workIds.has(photo.workId)) : !photo.workId)

@@ -3,7 +3,7 @@ import type { Car, Ledger } from "../app/ledger";
 // Аудит книги: чистый diff «было/стало» по денежным сущностям.
 // Значения хранятся как есть (деньги — целые копейки), подписи полей — в fieldLabels.
 
-export type AuditEntity = "car" | "expense" | "cash" | "partner" | "payout";
+export type AuditEntity = "car" | "expense" | "cash" | "partner" | "payout" | "task" | "part";
 export type AuditAction = "create" | "update" | "delete";
 export type AuditRow = {
   entity: AuditEntity;
@@ -23,10 +23,13 @@ export const fieldLabels: Record<string, string> = {
   askingPrice: "Цена в объявлении", cashPurchase: "Покупка из кассы", cashSale: "Продажа в кассу",
   registration: "Госномер", shares: "Доли участников", payer: "Кто оплатил",
   category: "Категория", fromCash: "Из кассы",
+  title: "Название", due: "Срок", done: "Выполнено", listingUrl: "Ссылка на объявление",
+  plannedPrice: "Плановая цена", acquired: "Куплена", article: "Артикул",
 };
 
 export const entityLabels: Record<AuditEntity, string> = {
   car: "Автомобиль", expense: "Расход", cash: "Касса", partner: "Партнёр", payout: "Выплата",
+  task: "Задача", part: "Запчасть",
 };
 
 const norm = (value: unknown) => value === undefined ? null : value;
@@ -45,7 +48,7 @@ function updateRows(
   return rows;
 }
 
-const carFields = ["name", "registration", "bought", "buy", "sold", "price", "stage", "askingPrice", "cashPurchase", "cashSale"];
+const carFields = ["name", "registration", "bought", "buy", "sold", "price", "stage", "askingPrice", "cashPurchase", "cashSale", "listingUrl"];
 const cashFields = ["name", "date", "amount", "direction", "allocations"];
 const expenseFields = ["name", "date", "amount", "payer", "category"];
 const payoutFields = ["amount", "date", "fromCash"];
@@ -62,6 +65,41 @@ function payoutsOf(car: Car, partners: Ledger["partners"]): PayoutRef[] {
     id: payout.id, amount: payout.amount, date: payout.date, fromCash: payout.fromCash,
     partnerName: names.get(share.partner) ?? share.partner,
   })));
+}
+
+const taskFields = ["title", "due", "done"];
+const partFields = ["name", "article", "plannedPrice", "acquired"];
+const taskSnapshot = (item: { title: string; due?: string; done: boolean; author?: string }) => ({ title: item.title, due: norm(item.due), done: item.done, author: norm(item.author) });
+const partSnapshot = (item: { name: string; plannedPrice?: number; acquired: boolean }) => ({ name: item.name, plannedPrice: norm(item.plannedPrice), acquired: item.acquired });
+
+function diffTasks(before: Car, after: Car): AuditRow[] {
+  const rows: AuditRow[] = [];
+  const beforeById = new Map((before.tasks ?? []).map(item => [item.id, item]));
+  const afterById = new Map((after.tasks ?? []).map(item => [item.id, item]));
+  for (const item of after.tasks ?? []) {
+    const previous = beforeById.get(item.id);
+    if (!previous) rows.push({ entity: "task", entityId: item.id, entityName: item.title, carId: after.id, action: "create", field: null, before: null, after: taskSnapshot(item) });
+    else rows.push(...updateRows("task", item.id, item.title, after.id, previous, item, taskFields));
+  }
+  for (const item of before.tasks ?? []) {
+    if (!afterById.has(item.id)) rows.push({ entity: "task", entityId: item.id, entityName: item.title, carId: after.id, action: "delete", field: null, before: taskSnapshot(item), after: null });
+  }
+  return rows;
+}
+
+function diffParts(before: Car, after: Car): AuditRow[] {
+  const rows: AuditRow[] = [];
+  const beforeById = new Map((before.parts ?? []).map(item => [item.id, item]));
+  const afterById = new Map((after.parts ?? []).map(item => [item.id, item]));
+  for (const item of after.parts ?? []) {
+    const previous = beforeById.get(item.id);
+    if (!previous) rows.push({ entity: "part", entityId: item.id, entityName: item.name, carId: after.id, action: "create", field: null, before: null, after: partSnapshot(item) });
+    else rows.push(...updateRows("part", item.id, item.name, after.id, previous, item, partFields));
+  }
+  for (const item of before.parts ?? []) {
+    if (!afterById.has(item.id)) rows.push({ entity: "part", entityId: item.id, entityName: item.name, carId: after.id, action: "delete", field: null, before: partSnapshot(item), after: null });
+  }
+  return rows;
 }
 
 function diffExpenses(before: Car, after: Car): AuditRow[] {
@@ -106,6 +144,8 @@ function diffCars(before: Ledger, after: Ledger): AuditRow[] {
     if (!previous) {
       rows.push({ entity: "car", entityId: car.id, entityName: car.name, carId: car.id, action: "create", field: null, before: null, after: carSnapshot(car) });
       rows.push(...diffExpenses({ ...car, expenses: [] }, car));
+      rows.push(...diffTasks({ ...car, tasks: [] }, car));
+      rows.push(...diffParts({ ...car, parts: [] }, car));
       rows.push(...diffPayouts({ ...car, shares: car.shares.map(share => ({ ...share, payouts: [] })) }, car, after.partners));
       continue;
     }
@@ -114,12 +154,16 @@ function diffCars(before: Ledger, after: Ledger): AuditRow[] {
       rows.push({ entity: "car", entityId: car.id, entityName: car.name, carId: car.id, action: "update", field: "shares", before: sharesProjection(previous), after: sharesProjection(car) });
     }
     rows.push(...diffExpenses(previous, car));
+    rows.push(...diffTasks(previous, car));
+    rows.push(...diffParts(previous, car));
     rows.push(...diffPayouts(previous, car, after.partners));
   }
   for (const car of before.cars) {
     if (!afterById.has(car.id)) {
       rows.push({ entity: "car", entityId: car.id, entityName: car.name, carId: car.id, action: "delete", field: null, before: carSnapshot(car), after: null });
       rows.push(...diffExpenses(car, { ...car, expenses: [] }));
+      rows.push(...diffTasks(car, { ...car, tasks: [] }));
+      rows.push(...diffParts(car, { ...car, parts: [] }));
       rows.push(...diffPayouts(car, { ...car, shares: car.shares.map(share => ({ ...share, payouts: [] })) }, before.partners));
     }
   }

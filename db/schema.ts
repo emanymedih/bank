@@ -55,6 +55,13 @@ export const otpChallenges = sqliteTable("otp_challenges", {
 });
 
 // Append-only журнал изменений книги: автор, момент, сущность, поле, было/стало.
+// Скользящие окна rate-limit (вход, OTP) по IP и другим ключам.
+export const rateLimits = sqliteTable("rate_limits", {
+  key: text("key").primaryKey(),
+  hits: integer("hits").notNull(),
+  windowStart: text("window_start").notNull(),
+});
+
 export const auditEvents = sqliteTable("audit_events", {
   seq: integer("seq").primaryKey({ autoIncrement: true }),
   bookId: text("book_id").notNull(),

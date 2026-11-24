@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { users } from "../../../../db/schema";
-import { createSession, clientDevice, isSecureRequest, readJson, sessionCookie, verifyPassword } from "../../../auth";
+import { createSession, clientDevice, clientIp, isSecureRequest, rateLimit, readJson, sessionCookie, verifyPassword } from "../../../auth";
 import { normalizeRussianPhone } from "../../../../lib/phone";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,9 @@ export async function POST(request: Request) {
   const phone = normalizeRussianPhone(body?.phone);
   const password = typeof body?.password === "string" ? body.password : "";
   if (!phone || !password) return reply({ error: "Введите номер телефона и пароль." }, 422);
+  if (!await rateLimit("login:" + clientIp(request), 20, 15 * 60_000)) {
+    return reply({ error: "Слишком много попыток входа. Подождите 15 минут." }, 429);
+  }
   const [user] = await getDb().select().from(users).where(eq(users.phone, phone));
   if (!user || !verifyPassword(password, user.passwordHash)) {
     return reply({ error: "Неверный номер или пароль." }, 401);

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   ArrowDownLeft, ArrowUpRight, BarChart3, Camera, Check,
-  CircleDollarSign, ClipboardList, Download, Ellipsis, FileText, Gauge, History, LayoutDashboard, Pencil, Plus,
+  CircleDollarSign, ClipboardList, Download, Ellipsis, ExternalLink, FileText, Gauge, History, LayoutDashboard, Pencil, Plus,
   Search, TrendingUp, Trash2, UsersRound, Wallet, X, Mic,
 } from "lucide-react";
 import { cashSummary, defaultWeights, emptyLedger, expenseCategories, figures, initialLedger, ledgerClientVersion, maxCarPhotos, splitAmount, stageNames, totals, validLedger, vehicleStage, vehicleStages } from "./ledger";
@@ -24,6 +24,9 @@ import { PlatePhoto } from "./plate-photo";
 import { ContractForm } from "./contract-form";
 import { ActionQueue, FinanceStrip, StageBoard, StageLabel, VehicleRegistry } from "./workbench";
 import { ActivityFeed } from "./activity-feed";
+import { parseSavedFilter } from "../lib/saved-filter";
+import { CarTasks } from "./car-tasks";
+import { OnboardingTour } from "./onboarding-tour";
 import type { CarFilter, RegistryMode } from "./workbench";
 import { DesktopInspector, useWideInspector, VehicleCover, VehicleTimeline } from "./vehicle-workspace";
 import { formatRussianPlate, normalizePlate, plateKey } from "../lib/license-plate";
@@ -36,7 +39,7 @@ const navigation = [
   { id: "cars", icon: LayoutDashboard }, { id: "cash", icon: Wallet },
   { id: "analytics", icon: BarChart3 }, { id: "partners", icon: UsersRound }, { id: "feed", icon: History },
 ] as const;
-const carTabs = { timeline: "Лента", summary: "Расчёты", history: "Работы и фото", parts: "Запчасти", audit: "Правки" };
+const carTabs = { timeline: "Лента", summary: "Расчёты", history: "Работы и фото", parts: "Запчасти", tasks: "Задачи", audit: "Правки" };
 type CarTab = keyof typeof carTabs;
 type Dialog =
   | { type: "car"; id?: string }
@@ -58,6 +61,12 @@ type Dialog =
 const format = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 const dateFormat = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 const rub = (value: number) => format.format(value / 100) + " ₽";
+// localStorage может быть заблокирован (приватный режим) — не роняем приложение.
+const storage = {
+  get(key: string) { try { return localStorage.getItem(key); } catch { return null; } },
+  set(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* недоступно */ } },
+  remove(key: string) { try { localStorage.removeItem(key); } catch { /* недоступно */ } },
+};
 const dateLabel = (value: string) => dateFormat.format(new Date(value)).replace(/\sг\.$/, "").replace(/\.(?=\s)/g, "");
 const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Moscow" }).format();
 const initials = (person: Partner) => person.name.split(/\s+/).map(part => part[0]).slice(0, 2).join("").toUpperCase();
@@ -97,7 +106,8 @@ function exportLedger(ledger: Ledger, through: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle, userName, bookId }: { signedIn: boolean; signInUrl: string; sellerScope?: string; bookTitle?: string; userName?: string; bookId?: string }) {
+export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle, userName, bookId, role }: { signedIn: boolean; signInUrl: string; sellerScope?: string; bookTitle?: string; userName?: string; bookId?: string; role?: string }) {
+  const canEdit = role !== "viewer";
   const [ledger, setLedger] = useState(signedIn ? emptyLedger : initialLedger);
   const [revision, setRevision] = useState(0);
   const [loaded, setLoaded] = useState(!signedIn);
@@ -110,6 +120,31 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
   const [registryMode, setRegistryMode] = useState<RegistryMode>("overview");
   const [sort, setSort] = useState("recent");
   const [query, setQuery] = useState("");
+  const [pinned, setPinned] = useState(false);
+  const [tour, setTour] = useState(false);
+  useEffect(() => {
+    if (!bookId) return;
+    const saved = parseSavedFilter(storage.get("avto_filter_" + bookId));
+    if (saved) {
+      setFilter(saved.filter as CarFilter); setSort(saved.sort);
+      setQuery(saved.query); setRegistryMode(saved.mode as RegistryMode);
+      setPinned(true);
+    } else {
+      setFilter("all"); setSort("recent"); setQuery(""); setRegistryMode("overview");
+      setPinned(false);
+    }
+  }, [bookId]);
+  useEffect(() => {
+    if (pinned && bookId) storage.set("avto_filter_" + bookId, JSON.stringify({ filter, sort, query, mode: registryMode }));
+  }, [pinned, bookId, filter, sort, query, registryMode]);
+  useEffect(() => {
+    if (signedIn && loaded && sellerScope && !storage.get("avto_tour_" + sellerScope)) setTour(true);
+  }, [signedIn, loaded, sellerScope]);
+  const togglePin = () => {
+    if (!bookId) return;
+    if (pinned) { storage.remove("avto_filter_" + bookId); setPinned(false); }
+    else { storage.set("avto_filter_" + bookId, JSON.stringify({ filter, sort, query, mode: registryMode })); setPinned(true); }
+  };
   const [selected, setSelected] = useState<string | null>(null);
   const [carTab, setCarTab] = useState<CarTab>("timeline");
   const wideInspector = useWideInspector();
@@ -156,7 +191,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
     return () => { cancelled = true; };
   }, [signedIn, bookId]);
   const markFeedSeen = useCallback((seq: number) => {
-    if (bookId) localStorage.setItem("avto_feed_seen_" + bookId, String(seq));
+    if (bookId) storage.set("avto_feed_seen_" + bookId, String(seq));
     setFeedNew(false);
   }, [bookId]);
   useEffect(() => {
@@ -325,6 +360,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
   }
 
   return <div className={"shell workbench-shell" + (wideInspector && selectedCar ? " inspection-open" : "")}>
+    {tour && sellerScope && <OnboardingTour userId={sellerScope} onDone={() => setTour(false)}/>}
     <a className="skip-to-workspace" href="#workspace-main">К рабочей области</a>
     <aside className="sidebar">
       <button className="brand" onClick={() => changeView("cars")} aria-label="Автобанк, главная">
@@ -356,10 +392,11 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         <div className="header-right">
           {view === "cars" && <button className="button secondary export" aria-label="Экспорт CSV" onClick={() => exportLedger(ledger, currentDate)} disabled={!loaded}><Download size={16}/><span>CSV</span></button>}
           {view !== "analytics" && view !== "feed" && <button className="button primary" onClick={() => open({ type: view === "cars" ? "car" : view === "cash" ? "cash" : "partner" })}
-            disabled={!loaded}><Plus size={19}/><span>{view === "cars" ? "Добавить авто" : view === "cash" ? "Добавить движение" : "Добавить партнёра"}</span></button>}
+            disabled={!loaded || !canEdit}><Plus size={19}/><span>{view === "cars" ? "Добавить авто" : view === "cash" ? "Добавить движение" : "Добавить партнёра"}</span></button>}
         </div>
       </header>
       <div className="content workspace-content">
+        {role === "viewer" && <p className="viewer-note" role="status">Режим наблюдения: книга доступна только для просмотра.</p>}
         {loadError ? <div className="empty panel"><p role="alert">{loadError}</p><button className="button primary" onClick={() => void load()}>Повторить</button></div>
           : !loaded ? <div className="empty panel" role="status">Загружаем книгу учёта…</div>
           : view === "analytics" ? <>
@@ -373,12 +410,12 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
           : view === "cars" ? <>
             <FinanceStrip cash={cash.entries.length ? cash.balance : null} retained={summary.bank} invested={summary.invested}
               rub={rub} onCash={() => changeView("cash")}/>
-            <StageBoard cars={ledger.cars} today={currentDate} filter={filter} onFilter={setFilter}/>
+            <StageBoard cars={ledger.cars} today={currentDate} filter={filter} onFilter={setFilter} rub={rub}/>
             <div className="work-columns">
               <VehicleRegistry cars={cars} ledger={ledger} summary={summary} currentDate={currentDate} dateLabel={dateLabel}
                 rub={rub} number={format.format} selected={selected} filter={filter} sort={sort} query={query} mode={registryMode}
                 onFilter={setFilter} onSort={setSort} onQuery={setQuery} onMode={setRegistryMode} onSelect={select}
-                onAdd={() => open({ type: "car" })}/>
+                onAdd={() => open({ type: "car" })} pinned={pinned} onPin={togglePin}/>
               <ActionQueue cars={ledger.cars} today={currentDate} dateLabel={dateLabel} onOpen={select}
                 onPlan={id => { select(id); open({ type: "progress", id }); }}/>
             </div>
@@ -417,7 +454,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
           {selectedCar.registration && <span className="car-registration">{selectedCar.registration}</span>}
           {selectedCar.vin && <span>VIN {selectedCar.vin}</span>}
         </div></div>
-        <div className="detail-actions"><button className="icon-button bordered" aria-label="Редактировать автомобиль" onClick={() => open({ type: "car", id: selectedCar.id })}><Pencil size={16}/></button>
+        <div className="detail-actions">{canEdit && <button className="icon-button bordered" aria-label="Редактировать автомобиль" onClick={() => open({ type: "car", id: selectedCar.id })}><Pencil size={16}/></button>}
           <button className="icon-button bordered" aria-expanded={actions} aria-label="Действия с автомобилем" onClick={() => setActions(!actions)}><Ellipsis size={20}/></button>
           {actions && <button className="delete-action" onClick={() => confirmDelete(selectedCar)}><Trash2 size={16}/>Удалить авто</button>}
         </div>
@@ -430,7 +467,8 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
           : !selectedCar.sold ? <span>Следующий шаг пока не указан</span> : <span>Сделка завершена</span>}
         </div>
         <div className="vehicle-progress-actions">
-          {!selectedCar.sold && <button className="button secondary" onClick={() => open({type:"progress", id:selectedCar.id})}><Pencil size={15}/>Этап и шаг</button>}
+          {canEdit && !selectedCar.sold && <button className="button secondary" onClick={() => open({type:"progress", id:selectedCar.id})}><Pencil size={15}/>Этап и шаг</button>}
+          {selectedCar.listingUrl && <a className="button secondary" href={selectedCar.listingUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={15}/>Объявление</a>}
         </div>
       </div>
       <VehicleCover key={selectedCar.id} car={selectedCar} source={photoSource} onHistory={() => setCarTab("history")}/>
@@ -456,6 +494,10 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
               + " от " + dateLabel(selectedCar.bought) + ". Доли в машине сохранятся.",
             label: "Учесть в кассе", danger: false, action: () => saveCar({ ...selectedCar, cashPurchase: true }, "Покупка учтена в кассе"),
           }) : undefined}/>
+        <details className="feed-collapse">
+          <summary>Правки участников</summary>
+          <ActivityFeed carId={selectedCar.id} partners={ledger.partners}/>
+        </details>
       </> : carTab === "history" ? <WorkHistory car={selectedCar} busy={busy} error={dialog ? "" : error} source={photoSource} dateLabel={dateLabel}
         onUpload={(phase, files, workId) => uploadPhotos(selectedCar, phase, files, workId)}
         onWork={work => open({type:"work", id:selectedCar.id, workId:work?.id})}
@@ -470,6 +512,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         onRemove={part => open({ type:"confirm", title:"Удалить запчасть из списка?",
           message:part.name + (part.expenseId ? ". Связанный расход останется в сделке." : ""),
           label:"Удалить позицию", action:() => saveCar({ ...selectedCar, parts: selectedCar.parts?.filter(item => item.id !== part.id) }, "Позиция удалена") })}/>
+      : carTab === "tasks" ? <CarTasks car={selectedCar} userName={userName} busy={busy || !canEdit} onSave={saveCar}/>
       : carTab === "audit" ? <ActivityFeed carId={selectedCar.id} partners={ledger.partners}/>
       : <CarDetails car={selectedCar} ledger={ledger} busy={busy} error={dialog ? "" : error}
         onExpense={expense => open({ type: "expense", id: selectedCar.id, expense })}
@@ -585,7 +628,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         busy={busy} onCancel={() => open(null)} onSave={async edited => {
           if (await saveCar(edited, "Этап сделки обновлён")) open(null);
         }}/>
-      : dialog.type === "sale" ? selectedCar && <SaleForm car={selectedCar} error={error} setError={setError} busy={busy} onCancel={() => open(null)} onSave={async (sold, price, cashSale) => {
+      : dialog.type === "sale" ? selectedCar && <SaleForm car={selectedCar} partners={ledger.partners} error={error} setError={setError} busy={busy} onCancel={() => open(null)} onSave={async (sold, price, cashSale) => {
         if (await saveCar({ ...selectedCar, sold, price, cashSale }, selectedCar.sold ? "Продажа обновлена" : "Продажа оформлена")) open(null);
       }}/>
       : dialog.type === "payout" ? selectedCar && <PayoutForm car={selectedCar} person={personBy(ledger, dialog.partnerId)}
@@ -833,6 +876,7 @@ function CarForm({ car, partners, knownCars, signedIn, defaultToCash, error, set
   const [lookupBusy, setLookupBusy] = useState(false);
   const [plateMessage, setPlateMessage] = useState("");
   const [buyInput, setBuyInput] = useState(car ? moneyText(car.buy) : "");
+  const [listingUrl, setListingUrl] = useState(car?.listingUrl ?? "");
   const storedAllocation = car?.shares.some(share => share.buy > 0);
   const [manual, setManual] = useState(Boolean(car && car.shares.length > 1 && storedAllocation));
   const [cashPurchase, setCashPurchase] = useState(car ? Boolean(car.cashPurchase) : defaultToCash);
@@ -971,8 +1015,13 @@ function CarForm({ car, partners, knownCars, signedIn, defaultToCash, error, set
       setError("Введите суммы взносов и проценты от 0 до 100."); return;
     }
     if (shares.reduce((sum, s) => sum + s.weight, 0) !== 10_000) { setError("Доли прибыли должны давать 100%."); return; }
+    const listing = listingUrl.trim();
+    if (listing) {
+      try { if (!["http:", "https:"].includes(new URL(listing).protocol)) throw new Error("protocol"); }
+      catch { setError("Ссылка на объявление должна начинаться с http:// или https://."); return; }
+    }
     await onSave(alignPurchaseStage({ ...car, id: car?.id ?? crypto.randomUUID(), name, vin, registration: savedRegistration || undefined, year, mileage, bought, buy: buyValid, cashPurchase,
-      sold: car?.sold ?? null, price: car?.price ?? null, shares, expenses: car?.expenses ?? [] }));
+      sold: car?.sold ?? null, price: car?.price ?? null, listingUrl: listing || undefined, shares, expenses: car?.expenses ?? [] }));
   }
 
   return <form onSubmit={submit}>
@@ -998,6 +1047,8 @@ function CarForm({ car, partners, knownCars, signedIn, defaultToCash, error, set
       <label className="field">Пробег, км<input type="number" min="0" max="10000000" step="1" name="mileage" placeholder="125 000" defaultValue={car?.mileage ?? undefined}/></label>
       <label className="field">Дата покупки<input type="date" name="bought" defaultValue={car?.bought ?? today()} required/></label>
       <label className="field">Цена покупки, ₽<input name="buy" inputMode="decimal" value={buyInput} onChange={e => setBuyInput(e.target.value)} required placeholder="0" maxLength={18}/></label>
+      <label className="field wide">Ссылка на объявление<input name="listingUrl" type="url" placeholder="https://www.avito.ru/…" value={listingUrl}
+        onChange={e => { setListingUrl(e.target.value); setError(""); }} maxLength={400}/></label>
     </div>
     <fieldset className="form-shares purchase-source">
       <legend>Источник оплаты</legend>
@@ -1088,12 +1139,15 @@ function ExpenseForm({ car, partners, expense, part, error, setError, busy, onCa
   </form>;
 }
 
-function SaleForm({ car, error, setError, busy, onCancel, onSave }: FormProps & {
-  car: Car; setError: (error: string) => void; onSave: (sold: string, price: number, cashSale: boolean) => Promise<void>;
+function SaleForm({ car, partners, error, setError, busy, onCancel, onSave }: FormProps & {
+  car: Car; partners: Partner[]; setError: (error: string) => void; onSave: (sold: string, price: number, cashSale: boolean) => Promise<void>;
 }) {
   const [priceInput, setPrice] = useState(car.price === null ? "" : moneyText(car.price));
+  const [cashSale, setCashSale] = useState(car.cashSale ?? car.cashPurchase ?? false);
   const price = parseMoney(priceInput);
   const profit = price - figures(car).invested;
+  const shareProfits = splitAmount(profit, car.shares.map(share => share.weight));
+  const names = new Map(partners.map(partner => [partner.id, partner.name]));
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!range(price, 1, 100_000_000_000)) { setError("Введите положительную цену продажи."); return; }
@@ -1115,8 +1169,16 @@ function SaleForm({ car, error, setError, busy, onCancel, onSave }: FormProps & 
       <label className="field">Дата продажи<input type="date" name="sold" min={car.bought} defaultValue={car.sold ?? (car.bought > today() ? car.bought : today())} required/></label>
       <label className="field">Цена продажи, ₽<input name="price" inputMode="decimal" value={priceInput} onChange={e => setPrice(e.target.value)} required placeholder="0" maxLength={18}/></label>
     </div>
-    <label className="option-check"><input type="checkbox" name="cashSale" defaultChecked={car.cashSale ?? car.cashPurchase}/> Деньги поступили в общую кассу</label>
+    <label className="option-check"><input type="checkbox" name="cashSale" checked={cashSale} onChange={event => setCashSale(event.target.checked)}/> Деньги поступили в общую кассу</label>
     {Number.isFinite(profit) && <div className="deal-bank"><CircleDollarSign size={18}/><span>Чистая прибыль</span><strong className={profitColor(profit)}>{rub(profit)}</strong></div>}
+    {Number.isFinite(profit) && range(price, 1, 100_000_000_000) && <div className="change-preview" aria-label="Что изменится после продажи">
+      <strong>Что изменится</strong>
+      <ul>
+        <li>Прибыль сделки: <b className={profitColor(profit)}>{rub(profit)}</b></li>
+        {cashSale && <li>Касса: +{rub(price)} от продажи</li>}
+        {car.shares.map((share, index) => <li key={share.partner}>{names.get(share.partner) ?? share.partner}: доля прибыли {rub(shareProfits[index])}</li>)}
+      </ul>
+    </div>}
     <FormFooter error={error} busy={busy} onCancel={onCancel} submit={car.sold ? "Сохранить" : "Оформить продажу"}/>
   </form>;
 }
@@ -1141,6 +1203,9 @@ function PayoutForm({ car, person, payment, error, setError, busy, onCancel, onS
 }) {
   const account = person && figures(car).people[person.id];
   const available = (account ? account.profit - account.paid : 0) + (payment?.amount ?? 0);
+  const [amountInput, setAmountInput] = useState(moneyText(payment?.amount ?? available));
+  const [fromCash, setFromCash] = useState(payment?.fromCash ?? Boolean(car.cashSale));
+  const amount = parseMoney(amountInput);
   return <form onSubmit={e => {
     e.preventDefault();
     const values = new FormData(e.currentTarget);
@@ -1154,11 +1219,19 @@ function PayoutForm({ car, person, payment, error, setError, busy, onCancel, onS
   }}>
     <p className="confirm-copy">{person?.name} · Можно выплатить {rub(available)}</p>
     <div className="form-grid">
-      <label className="field">Сумма выплаты, ₽<MoneyField name="amount" value={moneyText(payment?.amount ?? available)}/></label>
+      <label className="field">Сумма выплаты, ₽<input name="amount" inputMode="decimal" value={amountInput}
+        onChange={event => { setAmountInput(event.target.value); setError(""); }} required placeholder="0" maxLength={18}/></label>
       <label className="field">Дата выплаты<input type="date" name="date" min={car.sold ?? undefined} max={today()}
         defaultValue={payment?.date ?? today()} required/></label>
     </div>
-    <label className="option-check"><input type="checkbox" name="fromCash" defaultChecked={payment?.fromCash ?? Boolean(car.cashSale)}/> Выплачено из общей кассы</label>
+    <label className="option-check"><input type="checkbox" name="fromCash" checked={fromCash} onChange={event => setFromCash(event.target.checked)}/> Выплачено из общей кассы</label>
+    {range(amount, 1, available) && <div className="change-preview" aria-label="Что изменится после выплаты">
+      <strong>Что изменится</strong>
+      <ul>
+        <li>Остаток прибыли у {person?.name ?? "участника"}: {rub(available - amount)}</li>
+        {fromCash && <li>Касса: −{rub(amount)}</li>}
+      </ul>
+    </div>}
     {onDelete && <button className="button secondary remove-entry" type="button" disabled={busy} onClick={onDelete}><Trash2 size={16}/>Удалить выплату</button>}
     <FormFooter error={error} busy={busy} onCancel={onCancel} submit="Сохранить выплату"/>
   </form>;

@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { users } from "../../../../db/schema";
-import { consumeOtp, createSession, clientDevice, hashPassword, isSecureRequest, newId, readJson, sessionCookie } from "../../../auth";
+import { consumeOtp, createSession, clientDevice, clientIp, hashPassword, isSecureRequest, newId, rateLimit, readJson, sessionCookie } from "../../../auth";
 import { normalizeRussianPhone } from "../../../../lib/phone";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,7 @@ export async function POST(request: Request) {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   if (password.length < 8) return reply({ error: "Пароль — минимум 8 символов." }, 422);
   if (!name || name.length > 60) return reply({ error: "Укажите имя (до 60 символов)." }, 422);
+  if (!await rateLimit("verify:" + clientIp(request), 30, 60 * 60_000)) return reply({ error: "Слишком много попыток. Подождите час." }, 429);
   const verified = await consumeOtp(phone, body?.code);
   if ("error" in verified) return reply({ error: verified.error }, verified.status);
   const db = getDb();

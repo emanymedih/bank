@@ -52,14 +52,21 @@ export async function PUT(request: Request) {
   }
   const previousLedger = previous ? readStoredLedger(previous.data) : undefined;
   if (previousLedger === null) return unreadable();
+  // Автор задачи — реальный пользователь: новые подписываем сервером, чужие подписи не принимаем.
+  const previousTasks = new Map((previousLedger?.cars ?? []).flatMap(car => (car.tasks ?? []).map(item => [car.id + "/" + item.id, item])));
+  for (const car of ledger.cars) for (const item of car.tasks ?? []) {
+    const old = previousTasks.get(car.id + "/" + item.id);
+    item.author = old ? old.author : user.name;
+  }
   // Older editors cannot round-trip all cash movements, part fields and vehicle records.
   const version = Number.isInteger(data.clientVersion) ? data.clientVersion : 1;
   const losesNewFields = version < 4 && (previousLedger?.cashEntries?.some(entry => entry.allocations?.length)
     || previousLedger?.cars.some(car => car.parts?.some(part => part.plannedPrice || part.expenseId)));
+  const losesTaskFields = version < 5 && previousLedger?.cars.some(car => car.tasks?.length || car.listingUrl);
   const losesCarFields = previousLedger?.cars.some(car =>
     (version < 3 && car.cashPurchase && car.shares.some(share => share.buy > 0))
     || (version < 2 && (car.stageHistory?.length || car.shares.some(share => share.payouts?.length))));
-  if (losesNewFields || losesCarFields) {
+  if (losesNewFields || losesCarFields || losesTaskFields) {
     return reply({ error: "Обновите страницу перед сохранением. В книге есть данные, которые эта вкладка не поддерживает." }, 409);
   }
   if (!hasOnlyStoredPhotos(previousLedger, ledger)) return reply({ error: "Фотографии нужно загрузить через карточку автомобиля." }, 422);

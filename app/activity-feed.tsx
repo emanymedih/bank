@@ -13,10 +13,11 @@ type AuditEvent = {
 };
 
 const actionLabels = { create: "добавлено", update: "изменено", delete: "удалено" } as const;
-const moneyFields = new Set(["amount", "buy", "price", "askingPrice"]);
+const moneyFields = new Set(["amount", "buy", "price", "askingPrice", "plannedPrice"]);
 const filters: { id: AuditEntity | "all"; label: string }[] = [
   { id: "all", label: "Все" }, { id: "cash", label: "Касса" }, { id: "car", label: "Авто" },
-  { id: "expense", label: "Расходы" }, { id: "payout", label: "Выплаты" }, { id: "partner", label: "Партнёры" },
+  { id: "expense", label: "Расходы" }, { id: "payout", label: "Выплаты" }, { id: "task", label: "Задачи" },
+  { id: "part", label: "Запчасти" }, { id: "partner", label: "Партнёры" },
 ];
 
 const rub = (kopecks: number) => (kopecks / 100).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " ₽";
@@ -38,6 +39,7 @@ function formatValue(field: string | null, value: unknown, partners: Partner[]):
   if (typeof value === "object") {
     const record = value as Record<string, unknown>;
     if (typeof record.amount === "number") return `${record.name ? record.name + " · " : ""}${rub(record.amount)}${record.date ? " от " + record.date : ""}`;
+    if (typeof record.title === "string") return `${record.title}${record.due ? " · срок " + record.due : ""}${record.done ? " · выполнено" : ""}`;
     if (typeof record.buy === "number") return `${record.name ?? ""} · покупка ${rub(record.buy)}${record.sold ? `, продажа ${rub(Number(record.price ?? 0))}` : ""}`;
     if (typeof record.name === "string") return record.name;
     return JSON.stringify(value);
