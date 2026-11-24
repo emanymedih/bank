@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { build } from "esbuild";
-import { cashSummary, validLedger } from "../app/ledger.ts";
+import { cashSummary, figures, validLedger } from "../app/ledger.ts";
 import { alice, bob, expense, makeCar, makeLedger } from "./support/fixtures.mjs";
 
 const result = await build({
@@ -99,4 +99,39 @@ test("proportional profit and loss agree with a manual calculation while purchas
   assert(validLedger(loss));
   assert.deepEqual(fundingSnapshot(profit, through).balances, { [alice.id]: 7_500_000, [bob.id]: 12_500_000 });
   assert.deepEqual(fundingSnapshot(loss, through).balances, { [alice.id]: -3_000_000, [bob.id]: -5_000_000 });
+});
+
+test("an allocated purchase from common cash is debited once and keeps both attributed stakes", () => {
+  const car = makeCar({
+    bought: "2026-11-23", buy: 92_000_000, cashPurchase: true,
+    shares: [{ ...makeCar().shares[0], buy: 40_000_000 }, { ...makeCar().shares[1], buy: 52_000_000 }],
+  });
+  const book = { ...makeLedger(car), cashEntries: [
+    { id: "open", date: "2026-11-22", name: "Начальный остаток", amount: 186_000_000, direction: "in" },
+    { id: "payout", date: "2026-11-22", name: "Выплата", amount: 30_000_000, direction: "out" },
+  ] };
+  assert(validLedger(book));
+  assert.equal(cashSummary(book, "2026-11-22").balance, 156_000_000);
+  const cash = cashSummary(book, through);
+  assert.equal(cash.balance, 64_000_000);
+  assert.equal(cash.spending, 122_000_000);
+  assert.equal(cash.entries.filter(entry => entry.id === car.id + "/buy").length, 1);
+  assert.deepEqual(fundingSnapshot(book, through).deployed, new Map([[alice.id, 40_000_000], [bob.id, 52_000_000]]));
+  assert(!validLedger(makeLedger({ ...car, shares: [{ ...car.shares[0], buy: 1 }, car.shares[1]] })));
+});
+
+test("attributing cash capital does not make it a personal advance or change a gain or loss", () => {
+  const base = makeCar();
+  for (const price of [110_000_000, 90_000_000]) {
+    const sold = { ...base, sold: "2026-11-20", price, cashSale: true, cashPurchase: true,
+      expenses: [expense({ amount: 1_000_000, payer: alice.id })] };
+    assert(validLedger(makeLedger(sold)));
+    const calculation = figures(sold);
+    assert.equal(calculation.people[alice.id].buy, 0);
+    assert.equal(calculation.people[bob.id].buy, 0);
+    assert.equal(calculation.people[alice.id].expenses, 1_000_000);
+    assert.equal(calculation.people[bob.id].profit, (price - 101_000_000) / 2);
+    assert.equal(cashSummary(makeLedger(sold), through).balance, price - 100_000_000);
+    assert.equal(cashSummary(makeLedger({ ...sold, cashPurchase: false }), through).balance, price);
+  }
 });

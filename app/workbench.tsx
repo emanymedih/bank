@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRight, CarFront, ChevronDown, ClipboardList, Clock3, ReceiptText, Search, Wallet } from "lucide-react";
+import { VehicleMark } from "./vehicle-mark";
 import { figures, stageNames, vehicleStage, vehicleStages } from "./ledger";
 import type { Car, Ledger, VehicleStage, totals } from "./ledger";
 
@@ -166,7 +167,7 @@ export function VehicleRegistry(props: RegistryProps) {
             return <tr key={car.id} className={car.id === selected ? "selected-row" : undefined} onClick={() => onSelect(car.id)}>
               <td><button className="vehicle" aria-current={car.id === selected ? "true" : undefined}
                 onClick={event => { event.stopPropagation(); onSelect(car.id); }}>
-                <span className="vehicle-icon"><CarFront size={18} aria-hidden="true"/></span>
+                <VehicleMark name={car.name} className="vehicle-icon"/>
                 <span><b>{car.name}</b><small>{rowDescription(car, props)}</small></span>
               </button></td>
               <td><StageLabel stage={vehicleStage(car)}/></td>
@@ -199,7 +200,7 @@ export function VehicleRegistry(props: RegistryProps) {
         const advertised = car.price === null && car.askingPrice !== undefined;
         const salePrice = car.price ?? car.askingPrice;
         return <button key={car.id} className="mobile-car" onClick={() => onSelect(car.id)}>
-          <span className="mobile-car-top"><span className="vehicle"><CarFront size={18}/><span>
+          <span className="mobile-car-top"><span className="vehicle"><VehicleMark name={car.name} className="vehicle-icon"/><span>
             <b>{car.name}</b><small>{rowDescription(car, props)}</small>
           </span></span><StageLabel stage={vehicleStage(car)}/></span>
           {!detailed && !car.sold && car.nextAction && <span className="mobile-step">
