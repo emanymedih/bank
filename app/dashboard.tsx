@@ -12,7 +12,7 @@ import { Analytics, CashJournal } from "./insights";
 import { StageAnalytics } from "./stage-analytics";
 import { alignPurchaseStage, initializeStageHistory, recordStageChange } from "./stage-history";
 import { mergeDraft } from "../lib/merge-draft";
-import { dateLabel } from "./format";
+import { dateLabel, todayIn } from "./format";
 import { BatchExpenseForm } from "./batch-expenses";
 import type { CashTab } from "./insights";
 import { VehicleFunding } from "./funding-view";
@@ -77,7 +77,7 @@ const conflictFieldLabels: Record<string, string> = {
   registration: "госномер", name: "марка и модель", vin: "VIN", year: "год",
   buy: "цена покупки", listingUrl: "ссылка на объявление", cashPurchase: "источник оплаты",
 };
-const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Moscow" }).format();
+const today = () => todayIn();
 const initials = (person: Partner) => person.name.split(/\s+/).map(part => part[0]).slice(0, 2).join("").toUpperCase();
 const personBy = (ledger: Ledger, id: string) => ledger.partners.find(p => p.id === id);
 const moneyText = (value: number) => String(value / 100).replace(".", ",");
@@ -387,7 +387,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
-      if (dialog) return;
+      if (dialog || (selectedCar && !wideInspector)) return;
       if (event.key === "/") {
         const input = document.querySelector<HTMLInputElement>('input[aria-label="Поиск по авто, VIN или номеру"]');
         if (input) { event.preventDefault(); input.focus(); }
@@ -396,7 +396,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dialog, canEdit, view]);
+  }, [dialog, canEdit, view, selectedCar, wideInspector]);
 
   const statusBlock = status ? <div className="status-line" role="status"
     onMouseEnter={() => setStatusPaused(true)} onMouseLeave={() => setStatusPaused(false)}
@@ -961,14 +961,19 @@ function CarForm({ car, partners, knownCars, signedIn, defaultToCash, error, set
   const [sharesConflict, setSharesConflict] = useState(false);
   const resetAllocation = (source: Car) => {
     const stored = source.shares.some(share => share.buy > 0);
-    setSelectedPartners(source.shares.map(share => share.partner));
-    setContributionInputs(Object.fromEntries(stored ? source.shares.map(share => [share.partner, moneyText(share.buy)]) : []));
+    const selected = source.shares.map(share => share.partner);
+    const contrib = Object.fromEntries(stored ? source.shares.map(share => [share.partner, moneyText(share.buy)]) : []);
     const expected = purchaseContributionWeights(source.shares.map(share => share.buy));
     const custom = Boolean(source.sold && source.shares.length > 1) || source.shares.some((share, index) => share.weight !== expected[index]);
+    const weights = Object.fromEntries((custom ? source.shares : []).map(share => [share.partner, moneyText(share.weight)]));
+    const isManual = Boolean(source.shares.length > 1 && stored);
+    setSelectedPartners(selected);
+    setContributionInputs(contrib);
     setCustomWeights(custom);
-    setWeightInputs(Object.fromEntries((custom ? source.shares : []).map(share => [share.partner, moneyText(share.weight)])));
-    setManual(Boolean(source.shares.length > 1 && stored));
+    setWeightInputs(weights);
+    setManual(isManual);
     setAllocateCash(Boolean(stored));
+    initialAllocationRef.current = allocationKey(selected, contrib, weights, isManual, custom, Boolean(stored));
     setSharesConflict(false);
   };
   const originalOrder = car?.shares.map(share => share.partner) ?? [];

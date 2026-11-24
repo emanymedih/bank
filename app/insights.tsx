@@ -118,7 +118,7 @@ export function CashJournal({ ledger, today, rub, formatDate, onAdd, onEdit, onC
     <div className="funding-switch cash-tabs" role="tablist" aria-label="Раздел кассы" onKeyDown={event => {
       if (event.key !== "ArrowRight" && event.key !== "ArrowLeft" && event.key !== "Home" && event.key !== "End") return;
       event.preventDefault();
-      const next = event.key === "Home" ? "journal" : event.key === "End" ? "capital" : tab === "capital" ? "journal" : "capital";
+      const next = event.key === "Home" || event.key === "ArrowLeft" ? "journal" : "capital";
       onTab(next);
       document.getElementById(next === "capital" ? "cash-tab-capital" : "cash-tab-journal")?.focus();
     }}>

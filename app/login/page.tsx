@@ -96,7 +96,7 @@ function LoginForm() {
             tabIndex={mode === item || (mode === "reset" && item === "login") ? 0 : -1} className={mode === item ? "auth-tab current" : "auth-tab"}
             onClick={() => switchMode(item)}>{titles[item]}</button>)}
       </div>
-      <div role="tabpanel" id="auth-panel" aria-labelledby={mode === "reset" ? undefined : "auth-tab-" + mode}>
+      <div role="tabpanel" id="auth-panel" aria-labelledby={mode === "reset" ? undefined : "auth-tab-" + mode} aria-label={mode === "reset" ? "Сброс пароля" : undefined}>
       <form className="auth-form" onSubmit={submit}>
         <label className="field wide">Номер телефона
           <input type="tel" inputMode="tel" autoComplete="tel" placeholder="+7 900 000-00-00" value={phone}

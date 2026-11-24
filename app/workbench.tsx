@@ -26,8 +26,8 @@ export function FinanceStrip({ cash, retained, invested, rub, onCash }: {
         {tone === "negative" && <small className="finance-note">Списания превышают поступления на {rub(overdraftAmount(cash))}</small>}
       </dd>
     </div>
-    <div><dt title="Прибыль проданных автомобилей, которая осталась в бизнесе, а не выплачена партнёрам.">Накопленная прибыль</dt><dd><strong>{rub(retained)}</strong></dd></div>
-    <div><dt title="Покупки и расходы по автомобилям, которые ещё в работе: деньги уже вложены, но не вернулись с продажей.">Вложено в авто</dt><dd><strong>{rub(invested)}</strong></dd></div>
+    <div><dt title="Прибыль проданных автомобилей, которая осталась в бизнесе, а не выплачена партнёрам.">Накопленная прибыль</dt><dd><strong>{rub(retained)}</strong><small className="finance-def">Прибыль проданных авто, оставленная в бизнесе</small></dd></div>
+    <div><dt title="Покупки и расходы по автомобилям, которые ещё в работе: деньги уже вложены, но не вернулись с продажей.">Вложено в авто</dt><dd><strong>{rub(invested)}</strong><small className="finance-def">Деньги в машинах, которые ещё в работе</small></dd></div>
   </dl>;
 }
 

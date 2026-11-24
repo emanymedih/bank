@@ -19,6 +19,14 @@ test("safeReturnTo отклоняет open-redirect", () => {
   assert.equal(safeReturnTo(""), "/");
 });
 
+test("safeReturnTo вырезает C0-управляющие, которые вырезает URL-парсер", () => {
+  assert.equal(safeReturnTo("/\t/evil.com"), "/");
+  assert.equal(safeReturnTo("/\n/evil.com"), "/");
+  assert.equal(safeReturnTo("/\r/evil.com"), "/");
+  assert.equal(safeReturnTo("/\u0000//evil.com"), "/");
+  assert.equal(safeReturnTo("/account\t"), "/account");
+});
+
 test("todayIn возвращает дату в нужной зоне в формате ISO", () => {
   const value = todayIn("Europe/Moscow");
   assert.match(value, /^\d{4}-\d{2}-\d{2}$/);

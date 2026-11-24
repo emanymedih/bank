@@ -520,7 +520,7 @@ h1 { font-size: 1.75rem; letter-spacing: -.04em; }
 .work-registry .deal-table tbody tr:hover td { background: var(--surface-soft); }
 .work-registry .deal-table tbody tr.selected-row td { background: #eef5da; }
 .stage-board { gap: 8px; }
-.stage-card { background: var(--surface); border: 1px solid var(--line-soft); border-top: 3px solid var(--stage-ink); border-radius: 10px; text-align: left; padding: 10px 12px; }
+.stage-card { background: var(--surface); border: 1px solid var(--line-soft); border-top: 3px solid var(--stage-ink); border-radius: 0; text-align: left; padding: 10px 12px; }
 .stage-card:hover { border-color: var(--stage-ink); }
 .stage-card[aria-pressed="true"] { color: var(--ink); background: var(--stage-surface); border-color: var(--stage-ink); }
 .drawer { border-radius: 0; border-left: 1px solid var(--line); }
@@ -533,7 +533,7 @@ h1 { font-size: 1.75rem; letter-spacing: -.04em; }
 .feed-lines li { padding: 6px 0; border-bottom: 1px solid var(--line-soft); }
 .feed-lines li:last-child { border-bottom: 0; }
 .workspace-main .analytics-metrics .metric:not(.negative) { background: var(--surface); }
-.workspace-main .analytics-metrics .metric.hero:not(.negative) { background: var(--surface); color: var(--ink); border-left: 3px solid var(--brand); }
+.workspace-main .analytics-metrics .metric.hero:not(.negative) { background: var(--surface); color: var(--ink); border-left: 3px solid var(--brand); border-radius: 0; }
 .workspace-main .analytics-metrics .metric.hero:not(.negative) .metric-title,
 .workspace-main .analytics-metrics .metric.hero:not(.negative) small { color: var(--muted); }
 .partner-book .partner { border: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0; background: transparent; }
@@ -541,10 +541,10 @@ h1 { font-size: 1.75rem; letter-spacing: -.04em; }
 .cash-tabs { background: transparent; border-bottom: 1px solid var(--line); border-radius: 0; padding: 0; gap: 0; }
 .cash-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 10px; color: var(--muted); font-weight: 600; }
 .cash-tabs button[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); background: none; }
-.stage-card { border-radius: 0; }
 .status-close, .tour-close { position: relative; }
 .status-close::after, .tour-close::after { content: ""; position: absolute; inset: -11px; }
 .link-button { display: inline-flex; align-items: center; min-height: 32px; }
+.finance-def { display: block; color: var(--muted); font-size: .75rem; font-weight: 400; margin-top: 2px; }
 .drawer .status-line, .desktop-inspector .status-line { margin: 8px 12px 0; }
 @media (max-width: 650px) {
   .link-button { min-height: 44px; }
