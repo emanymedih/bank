@@ -496,7 +496,7 @@ h1 { font-size: 1.75rem; letter-spacing: -.04em; }
 .link-button:hover { color: var(--focus); }
 .conflict-note { margin: 0 0 12px; padding: 10px 12px; border: 1px solid #e4c9c4; background: var(--bad-soft); color: var(--bad); border-radius: 10px; font-size: .875rem; line-height: 1.45; }
 .dialog .conflict-note { margin: 0 18px 12px; }
-.field-conflict input { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad); }
+.field-conflict input, .field-conflict select { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad); }
 .status-line { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 6px 10px; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: .875rem; line-height: 1.4; }
 .status-line > span { flex: 1 1 auto; min-width: 0; }
 .status-close { display: grid; place-items: center; flex: 0 0 auto; padding: 4px; border: 0; background: none; color: var(--muted); border-radius: 6px; }

@@ -12,6 +12,7 @@ import { Analytics, CashJournal } from "./insights";
 import { StageAnalytics } from "./stage-analytics";
 import { alignPurchaseStage, initializeStageHistory, recordStageChange } from "./stage-history";
 import { mergeDraft } from "../lib/merge-draft";
+import { expenseSnapshot, expenseConflictLabels } from "../lib/expense-draft";
 import { dateLabel, todayIn } from "./format";
 import { BatchExpenseForm } from "./batch-expenses";
 import type { CashTab } from "./insights";
@@ -1222,27 +1223,45 @@ function ExpenseForm({ car, partners, expense, part, error, setError, busy, onCa
   car: Car; partners: Partner[]; expense?: Expense; part?: CarPart; setError: (error: string) => void;
   onSave: (expense: Expense) => Promise<void>; onBatch?: () => void;
 }) {
+  const [name, setName] = useState(expense?.name ?? (part?.name ?? "").slice(0, 90));
+  const [amountInput, setAmountInput] = useState(expense ? moneyText(expense.amount) : part?.plannedPrice ? moneyText(part.plannedPrice) : "");
+  const [date, setDate] = useState(expense?.date ?? (car.bought > today() ? car.bought : today()));
+  const [category, setCategory] = useState(expense ? expense.category ?? "" : part ? "Запчасти" : "");
+  const [payer, setPayer] = useState(expense ? expense.payer ?? "" : car.cashPurchase ? "" : car.shares[0]?.partner ?? "");
+  const baseRef = useRef(expenseSnapshot(expense));
+  const [conflictKeys, setConflictKeys] = useState<string[]>([]);
+  useEffect(() => {
+    const incoming = expenseSnapshot(expense);
+    if (!incoming || !baseRef.current) return;
+    const current = { name, amount: amountInput, date, category, payer };
+    const { merged, conflicts } = mergeDraft(baseRef.current, incoming, current);
+    if (merged.name !== name) setName(merged.name);
+    if (merged.amount !== amountInput) setAmountInput(merged.amount);
+    if (merged.date !== date) setDate(merged.date);
+    if (merged.category !== category) setCategory(merged.category);
+    if (merged.payer !== payer) setPayer(merged.payer);
+    baseRef.current = incoming;
+    setConflictKeys(conflicts);
+  }, [expense]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const values = new FormData(event.currentTarget);
-    const amount = parseMoney(values.get("amount"));
-    const name = String(values.get("name")).trim();
-    if (!name || !range(amount, 1, 100_000_000_000)) { setError("Введите название и положительную сумму расхода."); return; }
-    const payer = String(values.get("payer") ?? "");
-    const category = expenseCategories.find(value => value === values.get("category"));
-    await onSave({ id: expense?.id ?? crypto.randomUUID(), name, amount, date: String(values.get("date")),
-      payer: payer || null, category });
+    const amount = parseMoney(amountInput);
+    const trimmed = name.trim();
+    if (!trimmed || !range(amount, 1, 100_000_000_000)) { setError("Введите название и положительную сумму расхода."); return; }
+    await onSave({ id: expense?.id ?? crypto.randomUUID(), name: trimmed, amount, date,
+      payer: payer || null, category: expenseCategories.find(value => value === category) });
   }
   return <form onSubmit={submit}>
     {onBatch && <button className="button secondary batch-entry" type="button" onClick={onBatch}><Mic size={16}/>Добавить списком или голосом</button>}
+    {conflictKeys.length > 0 && <p className="conflict-note" role="alert">Другой участник изменил те же поля: {conflictKeys.map(key => expenseConflictLabels[key] ?? key).join(", ")}. Ваши значения оставлены — сверьте перед сохранением.</p>}
     <div className="form-grid">
-      <label className="field wide">На что потратили<input name="name" defaultValue={(expense?.name ?? part?.name)?.slice(0, 90)} placeholder="Например, комплект шин" required maxLength={90}/></label>
-      <label className="field">Сумма, ₽<MoneyField name="amount" value={expense ? moneyText(expense.amount) : part?.plannedPrice ? moneyText(part.plannedPrice) : undefined}/></label>
-      <label className="field">Дата расхода<input type="date" name="date" min={car.bought} defaultValue={expense?.date ?? (car.bought > today() ? car.bought : today())} required/></label>
-      <label className="field">Статья<select name="category" defaultValue={expense ? expense.category ?? "" : part ? "Запчасти" : ""}>
+      <label className={"field wide" + (conflictKeys.includes("name") ? " field-conflict" : "")}>На что потратили<input name="name" value={name} onChange={event => setName(event.target.value)} placeholder="Например, комплект шин" required maxLength={90}/></label>
+      <label className={"field" + (conflictKeys.includes("amount") ? " field-conflict" : "")}>Сумма, ₽<input name="amount" inputMode="decimal" value={amountInput} onChange={event => setAmountInput(event.target.value)} required placeholder="0" maxLength={18}/></label>
+      <label className={"field" + (conflictKeys.includes("date") ? " field-conflict" : "")}>Дата расхода<input type="date" name="date" min={car.bought} value={date} onChange={event => setDate(event.target.value)} required/></label>
+      <label className={"field" + (conflictKeys.includes("category") ? " field-conflict" : "")}>Статья<select name="category" value={category} onChange={event => setCategory(event.target.value)}>
         <option value="">Без статьи</option>{expenseCategories.map(category => <option key={category}>{category}</option>)}
       </select></label>
-      <label className="field">Кто оплатил<select name="payer" defaultValue={expense ? expense.payer ?? "" : car.cashPurchase ? "" : car.shares[0]?.partner}>
+      <label className={"field" + (conflictKeys.includes("payer") ? " field-conflict" : "")}>Кто оплатил<select name="payer" value={payer} onChange={event => setPayer(event.target.value)}>
         <option value="">Общая касса</option>{partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select></label>
     </div>
