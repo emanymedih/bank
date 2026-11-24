@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { BarChart3, ChevronDown, ChevronRight, Plus, Wallet } from "lucide-react";
 import { cashEntryBreakdown, cashSummary, yearAnalytics, yearsWithActivity } from "./ledger";
+import { cashTone } from "../lib/cash-signal";
 import type { Ledger } from "./ledger";
 import { CapitalPortfolio } from "./funding-view";
 import { purchaseContributionWeights } from "./purchase-funding";
@@ -101,7 +102,10 @@ export function CashJournal({ ledger, today, rub, formatDate, onAdd, onEdit, onC
 
   return <>
     <div className="metrics analytics-metrics">
-      <div className="metric hero"><span className="metric-title"><Wallet size={18}/> Доступно на покупку</span><strong>{cash.entries.length ? rub(cash.balance) : "—"}</strong><small>Остаток в кассе на сегодня</small></div>
+      <div className={"metric hero" + (cashTone(cash.entries.length ? cash.balance : null) === "negative" ? " negative" : "")}><span className="metric-title"><Wallet size={18}/> Доступно на покупку</span><strong>{cash.entries.length ? rub(cash.balance) : "—"}</strong>
+        {cashTone(cash.entries.length ? cash.balance : null) === "negative"
+          ? <small className="overdraft-note"><span className="badge-overdraft">Перерасход</span> Списания превышают поступления на {rub(-cash.balance)}. <button type="button" className="link-button" onClick={() => onTab("spending")}>Посмотреть списания</button></small>
+          : <small>Остаток в кассе на сегодня</small>}</div>
       <button className="metric cash-drilldown" type="button" aria-pressed={tab === "income"} onClick={() => onTab(tab === "income" ? "journal" : "income")}>
         <span className="metric-title">Поступления <ChevronRight size={17} aria-hidden="true"/></span><strong>{rub(cash.income)}</strong><small>Разбивка по источникам</small>
       </button>

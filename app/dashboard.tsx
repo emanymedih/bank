@@ -11,6 +11,7 @@ import { cashSummary, defaultWeights, emptyLedger, expenseCategories, figures, i
 import { Analytics, CashJournal } from "./insights";
 import { StageAnalytics } from "./stage-analytics";
 import { alignPurchaseStage, initializeStageHistory, recordStageChange } from "./stage-history";
+import { mergeDraft } from "../lib/merge-draft";
 import { BatchExpenseForm } from "./batch-expenses";
 import type { CashTab } from "./insights";
 import { VehicleFunding } from "./funding-view";
@@ -68,6 +69,15 @@ const storage = {
   remove(key: string) { try { localStorage.removeItem(key); } catch { /* недоступно */ } },
 };
 const dateLabel = (value: string) => dateFormat.format(new Date(value)).replace(/\sг\.$/, "").replace(/\.(?=\s)/g, "");
+const formSnapshot = (source: Car) => ({
+  registration: source.registration ?? "", name: source.name, vin: source.vin ?? "",
+  year: source.year ? String(source.year) : "", buy: moneyText(source.buy),
+  listingUrl: source.listingUrl ?? "", cashPurchase: Boolean(source.cashPurchase),
+});
+const conflictFieldLabels: Record<string, string> = {
+  registration: "госномер", name: "марка и модель", vin: "VIN", year: "год",
+  buy: "цена покупки", listingUrl: "ссылка на объявление", cashPurchase: "источник оплаты",
+};
 const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Moscow" }).format();
 const initials = (person: Partner) => person.name.split(/\s+/).map(part => part[0]).slice(0, 2).join("").toUpperCase();
 const personBy = (ledger: Ledger, id: string) => ledger.partners.find(p => p.id === id);
@@ -110,6 +120,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
   const canEdit = role !== "viewer";
   const [ledger, setLedger] = useState(signedIn ? emptyLedger : initialLedger);
   const [revision, setRevision] = useState(0);
+  const revisionRef = useRef(0);
   const [loaded, setLoaded] = useState(!signedIn);
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -151,8 +162,11 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
   const rowFocus = useRef<HTMLElement | null>(null);
   const demoPhotoUrls = useRef(new Map<string, string>());
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [conflict, setConflict] = useState(false);
   const [error, setError] = useState("");
-  const [toast, setToast] = useState("");
+  const [status, setStatus] = useState<{ message: string; action?: { label: string; run: () => void }; sticky?: boolean } | null>(null);
+  const [statusPaused, setStatusPaused] = useState(false);
+  const setToast = (message: string, action?: { label: string; run: () => void }, sticky = false) => setStatus({ message, action, sticky });
   const [actions, setActions] = useState(false);
   const writeLock = useRef(false);
   const selectedCar = ledger.cars.find(c => c.id === selected);
@@ -170,6 +184,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
       const data = await response.json() as { ledger: Ledger; revision: number };
       setLedger(data.ledger);
       setRevision(data.revision);
+      revisionRef.current = data.revision;
       setLoaded(true);
       setLoadError("");
     } catch (failure) {
@@ -195,12 +210,12 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
     setFeedNew(false);
   }, [bookId]);
   useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(""), 3300);
+    if (!status || status.sticky || statusPaused) return;
+    const timer = setTimeout(() => setStatus(null), status.action ? 8000 : 4000);
     return () => clearTimeout(timer);
-  }, [toast]);
+  }, [status, statusPaused]);
 
-  const open = (next: Dialog | null) => { setError(""); setActions(false); setDialog(next); };
+  const open = (next: Dialog | null) => { setError(""); setActions(false); setConflict(false); setDialog(next); };
   const select = (id: string | null) => {
     if (id && (!selected || document.activeElement?.matches(".vehicle, .mobile-car, .action-queue button, .cash-list button, .funding-open, .stage-analysis-row"))) {
       rowFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -216,7 +231,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
   };
   const changeView = (next: View) => { setView(next); select(null); };
 
-  async function save(next: Ledger, message: string) {
+  async function save(next: Ledger, message: string, undoable = false) {
     if (writeLock.current || !loaded) return false;
     if (!validLedger(next)) { setError("Проверьте даты, суммы и доли участников."); return false; }
     if (signedIn) {
@@ -226,19 +241,20 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         const response = await fetch("/api/ledger", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ revision, ledger: next, clientVersion: ledgerClientVersion }),
+          body: JSON.stringify({ revision: revisionRef.current, ledger: next, clientVersion: ledgerClientVersion }),
         });
         const result = await response.json() as { revision: number; conflict?: boolean; error?: string };
         if (!response.ok) {
           if (result.conflict) {
             await load();
-            open(null);
-            setToast("Правки не сохранились. Откройте запись заново.");
+            setConflict(true);
+            setToast("Книгу изменил другой участник. Правки остались в форме — сверьте и сохраните снова.", undefined, true);
             return false;
           }
           throw Error(result.error ?? "Сохранение не удалось. Попробуйте ещё раз.");
         }
         setRevision(result.revision);
+        revisionRef.current = result.revision;
       } catch (failure) {
         setError(failure instanceof Error ? failure.message : "Сохранение не удалось.");
         return false;
@@ -249,11 +265,14 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
     }
     setLedger(next);
     setError("");
-    setToast(message);
+    if (undoable) {
+      const previous = ledger;
+      setToast(message, { label: "Вернуть", run: () => { void save(previous, "Удаление отменено."); } });
+    }
     return true;
   }
 
-  async function saveCar(car: Car, message: string) {
+  async function saveCar(car: Car, message: string, undoable = false) {
     const current = ledger.cars.find(c => c.id === car.id);
     if (current) {
       const before = figures(current).people;
@@ -274,7 +293,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
     const start = autoStage ? [...car.expenses, ...(car.works ?? [])].map(entry => entry.date).sort()[0] : undefined;
     const updated = start ? recordStageChange({ ...car, stage: "purchased" }, "preparation", start) ?? car : car;
     const cars = current ? ledger.cars.map(c => c.id === car.id ? updated : c) : [initializeStageHistory(car), ...ledger.cars];
-    return save({ ...ledger, cars }, message);
+    return save({ ...ledger, cars }, message, undoable);
   }
 
   async function uploadPhotos(car: Car, phase: PhotoPhase, files: File[], workId?: string) {
@@ -301,6 +320,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         }
         setLedger(result.ledger);
         setRevision(result.revision);
+        revisionRef.current = result.revision;
       } else {
         const photos = compressed.map(file => {
           const id = crypto.randomUUID();
@@ -348,7 +368,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
   function confirmDelete(car: Car) {
     open({ type: "confirm", title: "Удалить автомобиль?", message: "Карточка «" + car.name + "», расходы и связанные движения кассы исчезнут из книги.",
       label: "Удалить автомобиль", action: async () => {
-        const ok = await save({ ...ledger, cars: ledger.cars.filter(c => c.id !== car.id) }, "Автомобиль удалён");
+        const ok = await save({ ...ledger, cars: ledger.cars.filter(c => c.id !== car.id) }, "Автомобиль удалён", true);
         if (ok) { removeDemoPhotos((car.photos ?? []).map(photo => photo.id)); select(null); }
         return ok;
       } });
@@ -396,6 +416,13 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         </div>
       </header>
       <div className="content workspace-content">
+        {status && <div className="status-line" role="status"
+          onMouseEnter={() => setStatusPaused(true)} onMouseLeave={() => setStatusPaused(false)}
+          onFocus={() => setStatusPaused(true)} onBlur={() => setStatusPaused(false)}>
+          <span>{status.message}</span>
+          {status.action && <button type="button" className="link-button" onClick={() => { const current = status; setStatus(null); current.action?.run(); }}>{status.action.label}</button>}
+          <button type="button" className="status-close" aria-label="Скрыть сообщение" onClick={() => setStatus(null)}><X size={14}/></button>
+        </div>}
         {role === "viewer" && <p className="viewer-note" role="status">Режим наблюдения: книга доступна только для просмотра.</p>}
         {loadError ? <div className="empty panel"><p role="alert">{loadError}</p><button className="button primary" onClick={() => void load()}>Повторить</button></div>
           : !loaded ? <div className="empty panel" role="status">Загружаем книгу учёта…</div>
@@ -521,7 +548,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
             ...selectedCar, expenses: selectedCar.expenses.filter(e => e.id !== expense.id),
             works: selectedCar.works?.map(work => work.expenseId === expense.id ? { ...work, expenseId: undefined } : work),
             parts: selectedCar.parts?.map(part => part.expenseId === expense.id ? { ...part, expenseId: undefined } : part),
-          }, "Расход удалён") })}
+          }, "Расход удалён", true) })}
         onSale={() => open({ type: "sale", id: selectedCar.id })}
         onPayout={(id, paymentId) => open({ type: "payout", id: selectedCar.id, partnerId: id, paymentId })}
         onRemoveLegacyPayout={id => open({ type: "confirm", title: "Снять отметку о выплате?",
@@ -535,7 +562,8 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         <button className="button secondary" onClick={() => open({type:"contract", id:selectedCar.id})}><FileText size={17}/>Договор</button>
       </footer>
     </VehicleInspector>}
-    {dialog && <Overlay title={dialogTitle(dialog)} onClose={() => { if (!busy) open(null); }}>
+    {dialog && <Overlay title={dialogTitle(dialog)} onClose={() => { if (!busy) open(null); }}
+      notice={conflict ? "Книгу изменил другой участник. Бесконфликтные изменения подтянуты в форму, спорные поля оставлены как у вас — сверьте и сохраните снова." : undefined}>
       {dialog.type === "confirm" ? <>
         <p className="confirm-copy">{dialog.message}</p>
         <FormFooter error={error} busy={busy} onCancel={() => open(null)} submit={dialog.label} danger={dialog.danger ?? true}
@@ -574,7 +602,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
             const removed = (selectedCar.photos ?? []).filter(photo => photo.workId === dialog.workId);
             const ok = await saveCar({ ...selectedCar,
               works:selectedCar.works?.filter(work => work.id !== dialog.workId),
-              photos:selectedCar.photos?.filter(photo => photo.workId !== dialog.workId) }, "Работа удалена");
+              photos:selectedCar.photos?.filter(photo => photo.workId !== dialog.workId) }, "Работа удалена", true);
             if (ok) removeDemoPhotos(removed.map(photo => photo.id));
             return ok;
           },
@@ -647,7 +675,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
               payment.id === dialog.paymentId && payment.fromCash)) ? " Списание исчезнет из кассы." : ""),
           label: "Удалить выплату", action: () => saveCar({ ...selectedCar, shares: selectedCar.shares.map(share =>
             share.partner === dialog.partnerId ? { ...share, payouts: share.payouts?.filter(payment => payment.id !== dialog.paymentId) }
-              : share) }, "Выплата удалена") }) : undefined}/>
+              : share) }, "Выплата удалена", true) }) : undefined}/>
       : dialog.type === "cash" ? <CashForm entry={ledger.cashEntries?.find(entry => entry.id === dialog.id)} partners={ledger.partners}
         error={error} setError={setError} busy={busy} onCancel={() => open(null)} onSave={async entry => {
           const entries = ledger.cashEntries ?? [];
@@ -655,7 +683,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
           if (await save({ ...ledger, cashEntries }, "Движение кассы сохранено")) open(null);
         }} onDelete={dialog.id ? () => open({
           type: "confirm", title: "Удалить движение?", message: "Касса пересчитается после удаления записи.", label: "Удалить движение",
-          action: () => save({ ...ledger, cashEntries: (ledger.cashEntries ?? []).filter(entry => entry.id !== dialog.id) }, "Движение удалено"),
+          action: () => save({ ...ledger, cashEntries: (ledger.cashEntries ?? []).filter(entry => entry.id !== dialog.id) }, "Движение удалено", true),
         }) : undefined}/>
       : <PartnerForm person={personBy(ledger, dialog.id ?? "")} error={error} busy={busy} onCancel={() => open(null)} onSave={async name => {
         if (ledger.partners.some(p => p.id !== dialog.id && p.name.toLocaleLowerCase("ru") === name.toLocaleLowerCase("ru"))) {
@@ -667,7 +695,6 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         if (await save({ ...ledger, partners }, "Партнёр сохранён")) open(null);
       }}/>}
     </Overlay>}
-    {toast && <div className="toast" role="status"><Check size={18}/>{toast}</div>}
   </div>;
 }
 
@@ -710,8 +737,8 @@ function VehicleTotals({ car, through }: { car: Car; through: string }) {
   </dl>;
 }
 
-function Overlay({ side, title, onClose, inactive, children }: {
-  side?: boolean; title: string; onClose: () => void; inactive?: boolean; children: ReactNode;
+function Overlay({ side, title, onClose, inactive, notice, children }: {
+  side?: boolean; title: string; onClose: () => void; inactive?: boolean; notice?: string; children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -728,6 +755,7 @@ function Overlay({ side, title, onClose, inactive, children }: {
         {side ? <div className="drawer-label" id={titleId}><ClipboardList size={17}/> Карточка автомобиля</div> : <h2 id={titleId}>{title}</h2>}
         <button className="icon-button" aria-label={side ? "Закрыть карточку" : "Закрыть"} onClick={onClose}><X size={22}/></button>
       </header>
+      {notice && <p className="conflict-note" role="alert">{notice}</p>}
       <div className="dialog-content">{children}</div>
     </div>
   </dialog>;
@@ -918,6 +946,23 @@ function CarForm({ car, partners, knownCars, signedIn, defaultToCash, error, set
       : "До цены покупки не хватает " + rub(buyValid - fixedTotal) + ". Очистите поле, чтобы рассчитать остаток.";
   }
 
+  const baseRef = useRef(car ? formSnapshot(car) : null);
+  const [conflictKeys, setConflictKeys] = useState<string[]>([]);
+  useEffect(() => {
+    if (!car || !baseRef.current) return;
+    const incoming = formSnapshot(car);
+    const current = { registration, name: identity.values.name, vin: identity.values.vin, year: identity.values.year, buy: buyInput, listingUrl, cashPurchase };
+    const { merged, conflicts } = mergeDraft(baseRef.current, incoming, current);
+    if (merged.registration !== registration) setRegistration(merged.registration);
+    if (merged.buy !== buyInput) setBuyInput(merged.buy);
+    if (merged.listingUrl !== listingUrl) setListingUrl(merged.listingUrl);
+    if (merged.cashPurchase !== cashPurchase) setCashPurchase(merged.cashPurchase);
+    if (merged.name !== identity.values.name || merged.vin !== identity.values.vin || merged.year !== identity.values.year)
+      setIdentity(prev => ({ ...prev, values: { ...prev.values, name: merged.name, vin: merged.vin, year: merged.year } }));
+    baseRef.current = incoming;
+    setConflictKeys(conflicts);
+  }, [car]);
+
   useEffect(() => {
     if (!signedIn) return;
     const request = new AbortController();
@@ -1025,12 +1070,13 @@ function CarForm({ car, partners, knownCars, signedIn, defaultToCash, error, set
   }
 
   return <form onSubmit={submit}>
+    {conflictKeys.length > 0 && <p className="conflict-note" role="alert">Другой участник изменил те же поля: {conflictKeys.map(key => conflictFieldLabels[key] ?? key).join(", ")}. Ваши значения оставлены — сверьте перед сохранением.</p>}
     <PlatePhoto disabled={busy || lookupBusy} onApply={plate => changeRegistration(plate, true)}/>
     <div className="form-grid">
-      <label className="field">Госномер<input name="registration" value={registration} onChange={event => changeRegistration(event.target.value.toUpperCase())}
+      <label className={"field" + (conflictKeys.includes("registration") ? " field-conflict" : "")}>Госномер<input name="registration" value={registration} onChange={event => changeRegistration(event.target.value.toUpperCase())}
         onBlur={() => changeRegistration(normalizePlate(registration), Boolean(registration.trim()) && !plateMessage)}
         placeholder="А123ВС250" autoCapitalize="characters" autoComplete="off" spellCheck={false} maxLength={20}/></label>
-      <label className="field">VIN<input name="vin" placeholder="VIN автомобиля" value={identity.values.vin}
+      <label className={"field" + (conflictKeys.includes("vin") ? " field-conflict" : "")}>VIN<input name="vin" placeholder="VIN автомобиля" value={identity.values.vin}
         onChange={event => editIdentity("vin", event.target.value.toUpperCase())} maxLength={32}/></label>
       {(plateMessage || lookupAvailable && formatRussianPlate(registration)) && <div className="wide plate-lookup">
         {plateMessage && <p role="status">{plateMessage}</p>}
@@ -1040,14 +1086,14 @@ function CarForm({ car, partners, knownCars, signedIn, defaultToCash, error, set
           <small>Сервис получит госномер и может списать стоимость запроса.</small>
         </>}
       </div>}
-      <label className="field wide">Марка и модель<input name="name" placeholder="Например, Škoda Fabia" value={identity.values.name}
+      <label className={"field wide" + (conflictKeys.includes("name") ? " field-conflict" : "")}>Марка и модель<input name="name" placeholder="Например, Škoda Fabia" value={identity.values.name}
         onChange={event => editIdentity("name", event.target.value)} required maxLength={90}/></label>
-      <label className="field">Год выпуска<input type="number" min="1880" max="2100" step="1" name="year" placeholder="2013"
+      <label className={"field" + (conflictKeys.includes("year") ? " field-conflict" : "")}>Год выпуска<input type="number" min="1880" max="2100" step="1" name="year" placeholder="2013"
         value={identity.values.year} onChange={event => editIdentity("year", event.target.value)}/></label>
       <label className="field">Пробег, км<input type="number" min="0" max="10000000" step="1" name="mileage" placeholder="125 000" defaultValue={car?.mileage ?? undefined}/></label>
       <label className="field">Дата покупки<input type="date" name="bought" defaultValue={car?.bought ?? today()} required/></label>
-      <label className="field">Цена покупки, ₽<input name="buy" inputMode="decimal" value={buyInput} onChange={e => setBuyInput(e.target.value)} required placeholder="0" maxLength={18}/></label>
-      <label className="field wide">Ссылка на объявление<input name="listingUrl" type="url" placeholder="https://www.avito.ru/…" value={listingUrl}
+      <label className={"field" + (conflictKeys.includes("buy") ? " field-conflict" : "")}>Цена покупки, ₽<input name="buy" inputMode="decimal" value={buyInput} onChange={e => setBuyInput(e.target.value)} required placeholder="0" maxLength={18}/></label>
+      <label className={"field wide" + (conflictKeys.includes("listingUrl") ? " field-conflict" : "")}>Ссылка на объявление<input name="listingUrl" type="url" placeholder="https://www.avito.ru/…" value={listingUrl}
         onChange={e => { setListingUrl(e.target.value); setError(""); }} maxLength={400}/></label>
     </div>
     <fieldset className="form-shares purchase-source">

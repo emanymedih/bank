@@ -7,11 +7,12 @@ import type { Car, CarTask } from "./ledger";
 const today = () => new Date().toISOString().slice(0, 10);
 
 export function CarTasks({ car, userName, busy, onSave }: {
-  car: Car; userName?: string; busy: boolean; onSave: (car: Car, message: string) => Promise<unknown>;
+  car: Car; userName?: string; busy: boolean; onSave: (car: Car, message: string, undoable?: boolean) => Promise<unknown>;
 }) {
   const [title, setTitle] = useState("");
   const [due, setDue] = useState("");
   const [error, setError] = useState("");
+  const [pendingRemove, setPendingRemove] = useState<string | null>(null);
   const tasks = [...(car.tasks ?? [])].sort((a, b) =>
     Number(a.done) - Number(b.done) || (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.createdAt.localeCompare(b.createdAt));
   const open = tasks.filter(task => !task.done).length;
@@ -52,9 +53,15 @@ export function CarTasks({ car, userName, busy, onSave }: {
           </small>
         </div>
         <button type="button" className="task-remove" disabled={busy} aria-label={"Удалить задачу: " + task.title}
-          onClick={() => void onSave({ ...car, tasks: (car.tasks ?? []).filter(item => item.id !== task.id) }, "Задача удалена")}>
+          onClick={() => setPendingRemove(pendingRemove === task.id ? null : task.id)}>
           <Trash2 size={15}/>
         </button>
+        {pendingRemove === task.id && <div className="task-confirm" role="alert">
+          <span>Удалить задачу «{task.title}»? Её можно будет вернуть из уведомления.</span>
+          <button type="button" className="button danger" disabled={busy}
+            onClick={() => { setPendingRemove(null); void onSave({ ...car, tasks: (car.tasks ?? []).filter(item => item.id !== task.id) }, "Задача удалена", true); }}>Удалить</button>
+          <button type="button" className="button secondary" disabled={busy} onClick={() => setPendingRemove(null)}>Отмена</button>
+        </div>}
       </li>)}
     </ul> : <p className="feed-empty">Пока нет задач. Добавьте первую — например, «Помыть и сфотографировать».</p>}
   </section>;

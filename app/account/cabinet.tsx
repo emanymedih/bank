@@ -18,6 +18,7 @@ export function Cabinet({ initialName, initialPhone }: { initialName: string; in
   const [books, setBooks] = useState<Book[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [removeMember, setRemoveMember] = useState<string | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -120,9 +121,13 @@ export function Cabinet({ initialName, initialPhone }: { initialName: string; in
         <ul className="account-list">
           {members.map(member => <li key={member.userId}>
             <span>{member.name} · {member.phone} <em className="account-role">{roleNames[member.role] ?? member.role}</em></span>
-            {isOwner && member.role !== "owner" &&
-              <button className="button secondary" disabled={busy}
-                onClick={() => run(() => json("/api/books/members?userId=" + encodeURIComponent(member.userId), { method: "DELETE" }), "Участник удалён из книги.")}>Удалить</button>}
+            {isOwner && member.role !== "owner" && (removeMember === member.userId
+              ? <span className="inline-confirm" role="alert">Удалить из книги? Участник потеряет доступ, его доли и история правок сохранятся.
+                  <button className="button danger" disabled={busy}
+                    onClick={() => { setRemoveMember(null); void run(() => json("/api/books/members?userId=" + encodeURIComponent(member.userId), { method: "DELETE" }), "Участник удалён из книги."); }}>Удалить</button>
+                  <button className="button secondary" disabled={busy} onClick={() => setRemoveMember(null)}>Отмена</button>
+                </span>
+              : <button className="button secondary" disabled={busy} onClick={() => setRemoveMember(member.userId)}>Удалить</button>)}
           </li>)}
         </ul>
         {isOwner && <form className="account-inline" onSubmit={invite}>

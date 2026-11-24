@@ -3,6 +3,7 @@
 import { ArrowRight, CarFront, ChevronDown, ClipboardList, Clock3, ReceiptText, Search, Wallet } from "lucide-react";
 import { VehicleMark } from "./vehicle-mark";
 import { figures, nextTask, stageNames, vehicleStage, vehicleStages } from "./ledger";
+import { cashTone, overdraftAmount } from "../lib/cash-signal";
 import type { Car, Ledger, VehicleStage, totals } from "./ledger";
 
 export type CarFilter = "all" | "active" | VehicleStage;
@@ -16,11 +17,13 @@ export function StageLabel({ stage }: { stage: VehicleStage }) {
 export function FinanceStrip({ cash, retained, invested, rub, onCash }: {
   cash: number | null; retained: number; invested: number; rub: (value: number) => string; onCash: () => void;
 }) {
+  const tone = cashTone(cash);
   return <dl className="finance-strip" aria-label="Сводка по деньгам">
-    <div className="finance-cash">
-      <dt><Wallet size={17} aria-hidden="true"/> Доступно на покупку</dt>
+    <div className={"finance-cash" + (tone === "negative" ? " negative" : "")}>
+      <dt><Wallet size={17} aria-hidden="true"/> Доступно на покупку{tone === "negative" && <span className="badge-overdraft">Перерасход</span>}</dt>
       <dd><strong>{cash === null ? "—" : rub(cash)}</strong>
-        <button type="button" onClick={onCash}>{cash === null ? "Добавить остаток" : "Открыть кассу"}<ArrowRight size={15} aria-hidden="true"/></button>
+        <button type="button" onClick={onCash}>{cash === null ? "Добавить остаток" : tone === "negative" ? "Разобрать в кассе" : "Открыть кассу"}<ArrowRight size={15} aria-hidden="true"/></button>
+        {tone === "negative" && <small className="finance-note">Списания превышают поступления на {rub(overdraftAmount(cash))}</small>}
       </dd>
     </div>
     <div><dt>Накопленная прибыль</dt><dd><strong>{rub(retained)}</strong></dd></div>
