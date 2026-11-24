@@ -43,10 +43,9 @@ h1 { font-size: 2rem; letter-spacing: -.04em; }
   padding: 29px 14px 17px; border: 0; background: var(--rail);
 }
 .workbench-shell .brand {
-  color: #f7fffb; font-size: 1.2rem; letter-spacing: -.035em; gap: 9px; width: fit-content;
-  padding: 2px 5px; margin: 0 0 48px;
+  width: min(156px, 100%); min-height: 44px; padding: 0 5px; margin: 0 0 44px; border-radius: 6px;
 }
-.brand-icon { color: #213b26; background: #dcefaa; box-shadow: none; width: 36px; height: 36px; border-radius: 9px; }
+.brand-wordmark { display: block; width: 100%; height: auto; }
 .workbench-shell .sidebar nav { display: grid; justify-content: stretch; gap: 5px; margin: 0; }
 .workbench-shell .nav-item { color: #c4d6cd; gap: 9px; padding: 0 9px; min-height: 46px; border-radius: 8px; }
 .workbench-shell .nav-item svg { color: inherit; width: 19px; height: 19px; display: block; }
@@ -300,8 +299,7 @@ h1 { font-size: 2rem; letter-spacing: -.04em; }
     position: static; height: auto; padding: 9px 13px 7px; gap: 6px;
     flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap;
   }
-  .workbench-shell .brand { margin: 0; font-size: 1.04rem; gap: 7px; }
-  .brand-icon { width: 30px; height: 30px; }
+  .workbench-shell .brand { width: 137px; margin: 0; }
   .workbench-shell .sidebar nav { display: grid; flex: 1 0 100%; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 3px; order: 3; }
   .workbench-shell .sidebar .nav-item { justify-content: center; min-height: 44px; gap: 4px; padding-inline: 3px; font-size: .76rem; }
   .workbench-shell .sidebar .nav-item svg { width: 15px; height: 15px; }

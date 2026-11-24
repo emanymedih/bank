@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
-  ArrowDownLeft, ArrowUpRight, BarChart3, Camera, CarFront, Check,
+  ArrowDownLeft, ArrowUpRight, BarChart3, Camera, Check,
   CircleDollarSign, ClipboardList, Download, Ellipsis, FileText, Gauge, LayoutDashboard, Pencil, Plus,
   Search, TrendingUp, Trash2, UsersRound, Wallet, X, Mic,
 } from "lucide-react";
@@ -304,8 +304,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
     <a className="skip-to-workspace" href="#workspace-main">К рабочей области</a>
     <aside className="sidebar">
       <button className="brand" onClick={() => changeView("cars")} aria-label="Автобанк, главная">
-        <span className="brand-icon"><CarFront size={22} strokeWidth={2}/></span>
-        <span>Автобанк</span>
+        <img className="brand-wordmark" src="/avtobank-wordmark.webp" width={584} height={106} alt="" fetchPriority="high"/>
       </button>
       <nav aria-label="Разделы">
         {navigation.map(({ id, icon: Icon }) => <button key={id} className={view === id ? "nav-item current" : "nav-item"}

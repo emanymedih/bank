@@ -34,11 +34,7 @@ svg { flex-shrink: 0; }
   color: var(--ink); padding: 1px 8px; background: none; margin: 0 0 47px;
   font-size: 1.26rem; font-weight: 780; line-height: 1.09; letter-spacing: -.055em;
 }
-.brand-icon {
-  background: var(--brand); color: white; border-radius: 12px; width: 42px; height: 42px;
-  display: grid; place-items: center; box-shadow: inset 0 1px 0 #ffffff30;
-}
-.brand small, .workspace small { display: block; margin-top: 5px; font-size: .75rem; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+.workspace small { display: block; margin-top: 5px; font-size: .75rem; font-weight: 500; color: var(--muted); letter-spacing: 0; }
 .sidebar nav { display: grid; gap: 6px; }
 .nav-item {
   display: flex; align-items: center; gap: 11px; padding: 0 12px; min-height: 45px; border: 0;
@@ -278,7 +274,6 @@ input[type=checkbox] { accent-color: var(--brand); width: 17px; height: 17px; ma
   .shell { display: block; }
   .sidebar { position: static; height: auto; padding: 9px 16px; border-right: 0; border-bottom: 1px solid var(--line); flex-direction: row; align-items: center; gap: 14px; justify-content: space-between; }
   .brand { width: auto; padding: 0; margin: 0; }
-  .brand-icon { width: 38px; height: 38px; border-radius: 10px; }
   .sidebar nav { display: flex; gap: 4px; }
   .nav-item { min-height: 39px; padding: 0 8px; gap: 5px; }
   .sidebar-bottom { margin: 0; display: flex; align-items: center; }
@@ -290,8 +285,6 @@ input[type=checkbox] { accent-color: var(--brand); width: 17px; height: 17px; ma
 
 @media (max-width: 650px) {
   .sidebar { flex-wrap: wrap; gap: 7px; }
-  .brand { font-size: 1.1rem; gap: 7px; }
-  .brand small { display: none; }
   .sidebar nav { margin-left: auto; }
   .nav-item { font-size: .8125rem; min-height: 38px; }
   .nav-item svg { width: 16px; height: 16px; }
@@ -492,8 +485,7 @@ input[type=checkbox] { accent-color: var(--brand); width: 17px; height: 17px; ma
 body { background: radial-gradient(ellipse at 90% 6%, #d5e7ff 0, transparent 43%), var(--page); }
 .sidebar { background: linear-gradient(165deg, #142d4e, #0c1c34 72%); border-color: #263e60; }
 .brand { color: #f2f7ff; }
-.brand small, .workspace small { color: #a9bdd7; }
-.brand-icon { background: #377feb; color: #fff; box-shadow: inset 0 0 0 1px #8fc2ff7a; }
+.workspace small { color: #a9bdd7; }
 .nav-item { color: #bed0e8; }
 .nav-item.current { background: #264a78; color: #fff; }
 .nav-item:hover { background: #203e64; color: #fff; }
