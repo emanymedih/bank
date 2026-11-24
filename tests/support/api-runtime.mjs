@@ -24,6 +24,7 @@ const files = {
   books: "app/api/books/route.ts",
   booksSelect: "app/api/books/select/route.ts",
   booksMembers: "app/api/books/members/route.ts",
+  booksEvents: "app/api/books/events/route.ts",
   invitesAccept: "app/api/invites/accept/route.ts",
 };
 
@@ -66,10 +67,14 @@ export async function createRuntime({ path = ":memory:" } = {}) {
     DB: {
       prepare(query) {
         const statement = db.prepare(query);
-        return { bind: (...args) => ({
+        return { bind: (...args) => {
+          // Эмуляция лимита Cloudflare D1: не больше 100 параметров на запрос.
+          if (args.length > 100) throw new Error("D1 limit: too many SQL parameters (" + args.length + ")");
+          return {
           raw: async () => statement.all(...args).map(row => Object.values(row)),
           run: async () => { const result = statement.run(...args); return { meta: { changes: result.changes, last_row_id: Number(result.lastInsertRowid) } }; },
-        }) };
+          };
+        } };
       },
     },
     BUCKET: {

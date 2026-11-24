@@ -1,9 +1,10 @@
 import { getPhotoBucket, hasOnlyStoredPhotos, photoKey, removedPhotos } from "../../../lib/ledger-media";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { ledgers } from "../../../db/schema";
+import { auditEvents, ledgers } from "../../../db/schema";
 import { getCurrentBook, getSessionUser } from "../../auth";
 import { emptyLedger, maxLedgerBytes, parseLedger, readStoredLedger } from "../../ledger";
+import { diffLedgers } from "../../../lib/ledger-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,24 @@ export async function PUT(request: Request) {
       .returning({ revision: ledgers.revision });
 
   if (!changed.length) return reply({ error: "Книга обновилась в другой вкладке или на другом устройстве.", conflict: true }, 409);
+  // Аудит: append-only журнал «кто, когда, что, было/стало». Ошибка журнала не ломает сохранение.
+  try {
+    const rows = diffLedgers(previousLedger, ledger);
+    if (rows.length) {
+      const at = new Date().toISOString();
+      const values = rows.map(row => ({
+        bookId: book.bookId, userId: user.userId, userName: user.name, at, revision,
+        entity: row.entity, entityId: row.entityId, entityName: row.entityName, carId: row.carId,
+        action: row.action, field: row.field,
+        before: row.before === null ? null : JSON.stringify(row.before),
+        after: row.after === null ? null : JSON.stringify(row.after),
+      }));
+      // D1 ограничивает запрос 100 параметрами; в строке 13 полей — пишем чанками по 7 строк.
+      for (let i = 0; i < values.length; i += 7) await db.insert(auditEvents).values(values.slice(i, i + 7));
+      // Храним последние 1000 событий именно этой книги (seq глобальный, окно по книге).
+      await db.run(sql`delete from audit_events where book_id = ${book.bookId} and seq <= (select seq from audit_events where book_id = ${book.bookId} order by seq desc limit 1 offset 1000)`);
+    }
+  } catch (error) { console.error("Не удалось записать аудит книги:", error); }
   if (previousLedger) {
     const keys = removedPhotos(previousLedger, ledger).map(id => photoKey(book.bookId, id));
     const bucket = getPhotoBucket();

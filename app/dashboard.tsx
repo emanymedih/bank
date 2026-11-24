@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import {
   ArrowDownLeft, ArrowUpRight, BarChart3, Camera, Check,
-  CircleDollarSign, ClipboardList, Download, Ellipsis, FileText, Gauge, LayoutDashboard, Pencil, Plus,
+  CircleDollarSign, ClipboardList, Download, Ellipsis, FileText, Gauge, History, LayoutDashboard, Pencil, Plus,
   Search, TrendingUp, Trash2, UsersRound, Wallet, X, Mic,
 } from "lucide-react";
 import { cashSummary, defaultWeights, emptyLedger, expenseCategories, figures, initialLedger, ledgerClientVersion, maxCarPhotos, splitAmount, stageNames, totals, validLedger, vehicleStage, vehicleStages } from "./ledger";
@@ -23,19 +23,20 @@ import { downloadBuyerReport } from "./car-report";
 import { PlatePhoto } from "./plate-photo";
 import { ContractForm } from "./contract-form";
 import { ActionQueue, FinanceStrip, StageBoard, StageLabel, VehicleRegistry } from "./workbench";
+import { ActivityFeed } from "./activity-feed";
 import type { CarFilter, RegistryMode } from "./workbench";
 import { DesktopInspector, useWideInspector, VehicleCover, VehicleTimeline } from "./vehicle-workspace";
 import { formatRussianPlate, normalizePlate, plateKey } from "../lib/license-plate";
 import type { PlateDetails } from "../lib/license-plate";
 import type { Car, CarPart, CarPhoto, CashEntry, Expense, Ledger, Partner, PhotoPhase, ProfitPayout, WorkEntry } from "./ledger";
 
-const sectionNames = { cars: "Автомобили", partners: "Мои партнёры", analytics: "Аналитика", cash: "Касса" };
+const sectionNames = { cars: "Автомобили", partners: "Мои партнёры", analytics: "Аналитика", cash: "Касса", feed: "Лента" };
 type View = keyof typeof sectionNames;
 const navigation = [
   { id: "cars", icon: LayoutDashboard }, { id: "cash", icon: Wallet },
-  { id: "analytics", icon: BarChart3 }, { id: "partners", icon: UsersRound },
+  { id: "analytics", icon: BarChart3 }, { id: "partners", icon: UsersRound }, { id: "feed", icon: History },
 ] as const;
-const carTabs = { timeline: "Лента", summary: "Расчёты", history: "Работы и фото", parts: "Запчасти" };
+const carTabs = { timeline: "Лента", summary: "Расчёты", history: "Работы и фото", parts: "Запчасти", audit: "Правки" };
 type CarTab = keyof typeof carTabs;
 type Dialog =
   | { type: "car"; id?: string }
@@ -96,7 +97,7 @@ function exportLedger(ledger: Ledger, through: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle, userName }: { signedIn: boolean; signInUrl: string; sellerScope?: string; bookTitle?: string; userName?: string }) {
+export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle, userName, bookId }: { signedIn: boolean; signInUrl: string; sellerScope?: string; bookTitle?: string; userName?: string; bookId?: string }) {
   const [ledger, setLedger] = useState(signedIn ? emptyLedger : initialLedger);
   const [revision, setRevision] = useState(0);
   const [loaded, setLoaded] = useState(!signedIn);
@@ -142,6 +143,22 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
   }
 
   useEffect(() => { if (signedIn) void load(); }, [signedIn]);
+
+  const [feedNew, setFeedNew] = useState(false);
+  useEffect(() => {
+    if (!signedIn || !bookId) return;
+    let cancelled = false;
+    fetch("/api/books/events?limit=1").then(response => response.ok ? response.json() as Promise<{ events?: { seq: number }[] }> : null).then(data => {
+      if (cancelled || !data?.events?.length) return;
+      const seen = Number(localStorage.getItem("avto_feed_seen_" + bookId) ?? 0);
+      setFeedNew(data.events[0].seq > seen);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [signedIn, bookId]);
+  const markFeedSeen = useCallback((seq: number) => {
+    if (bookId) localStorage.setItem("avto_feed_seen_" + bookId, String(seq));
+    setFeedNew(false);
+  }, [bookId]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 3300);
@@ -315,7 +332,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
       </button>
       <nav aria-label="Разделы">
         {navigation.map(({ id, icon: Icon }) => <button key={id} className={view === id ? "nav-item current" : "nav-item"}
-          aria-current={view === id ? "page" : undefined} onClick={() => changeView(id)}><Icon size={19}/><span>{sectionNames[id]}</span></button>)}
+          aria-current={view === id ? "page" : undefined} onClick={() => changeView(id)}><Icon size={19}/><span>{sectionNames[id]}</span>{id === "feed" && feedNew && <span className="nav-badge" aria-label="Есть новые события"/>}</button>)}
       </nav>
       <div className="sidebar-bottom">
         {signedIn && <div className="book-panel">
@@ -338,7 +355,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         </div>
         <div className="header-right">
           {view === "cars" && <button className="button secondary export" aria-label="Экспорт CSV" onClick={() => exportLedger(ledger, currentDate)} disabled={!loaded}><Download size={16}/><span>CSV</span></button>}
-          {view !== "analytics" && <button className="button primary" onClick={() => open({ type: view === "cars" ? "car" : view === "cash" ? "cash" : "partner" })}
+          {view !== "analytics" && view !== "feed" && <button className="button primary" onClick={() => open({ type: view === "cars" ? "car" : view === "cash" ? "cash" : "partner" })}
             disabled={!loaded}><Plus size={19}/><span>{view === "cars" ? "Добавить авто" : view === "cash" ? "Добавить движение" : "Добавить партнёра"}</span></button>}
         </div>
       </header>
@@ -352,6 +369,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
           : view === "cash" ? <CashJournal ledger={ledger} today={currentDate} rub={rub} formatDate={dateLabel}
             onAdd={() => open({ type: "cash" })} onEdit={id => open({ type: "cash", id })} onCar={select}
             tab={cashTab} onTab={setCashTab} mode={fundingMode} onMode={setFundingMode}/>
+          : view === "feed" ? <ActivityFeed partners={ledger.partners} onSeen={markFeedSeen}/>
           : view === "cars" ? <>
             <FinanceStrip cash={cash.entries.length ? cash.balance : null} retained={summary.bank} invested={summary.invested}
               rub={rub} onCash={() => changeView("cash")}/>
@@ -452,6 +470,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope, bookTitle,
         onRemove={part => open({ type:"confirm", title:"Удалить запчасть из списка?",
           message:part.name + (part.expenseId ? ". Связанный расход останется в сделке." : ""),
           label:"Удалить позицию", action:() => saveCar({ ...selectedCar, parts: selectedCar.parts?.filter(item => item.id !== part.id) }, "Позиция удалена") })}/>
+      : carTab === "audit" ? <ActivityFeed carId={selectedCar.id} partners={ledger.partners}/>
       : <CarDetails car={selectedCar} ledger={ledger} busy={busy} error={dialog ? "" : error}
         onExpense={expense => open({ type: "expense", id: selectedCar.id, expense })}
         onDeleteExpense={expense => open({ type: "confirm", title: "Удалить расход?", message: "Расход «" + expense.name + "» исчезнет из сделки.",

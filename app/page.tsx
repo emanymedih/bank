@@ -18,5 +18,5 @@ export default async function Home() {
     redirect("/api/books/select?id=" + encodeURIComponent(rows[0].bookId));
   }
   const [current] = await getDb().select({ title: books.title }).from(books).where(eq(books.id, book.bookId));
-  return <Dashboard signedIn signInUrl="/login" sellerScope={user.userId} bookTitle={current?.title} userName={user.name}/>;
+  return <Dashboard signedIn signInUrl="/login" sellerScope={user.userId} bookTitle={current?.title} userName={user.name} bookId={book.bookId}/>;
 }

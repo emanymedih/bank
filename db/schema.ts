@@ -53,3 +53,21 @@ export const otpChallenges = sqliteTable("otp_challenges", {
   attempts: integer("attempts").notNull(),
   lastSentAt: text("last_sent_at").notNull(),
 });
+
+// Append-only журнал изменений книги: автор, момент, сущность, поле, было/стало.
+export const auditEvents = sqliteTable("audit_events", {
+  seq: integer("seq").primaryKey({ autoIncrement: true }),
+  bookId: text("book_id").notNull(),
+  userId: text("user_id").notNull(),
+  userName: text("user_name").notNull(),
+  at: text("at").notNull(),
+  revision: integer("revision").notNull(),
+  entity: text("entity").notNull(),
+  entityId: text("entity_id").notNull(),
+  entityName: text("entity_name").notNull(),
+  carId: text("car_id"),
+  action: text("action").notNull(),
+  field: text("field"),
+  before: text("before"),
+  after: text("after"),
+});
