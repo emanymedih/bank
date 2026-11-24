@@ -19,11 +19,12 @@ export function purchaseContributionAmounts(price: number, fixed: (number | null
 }
 
 export function purchaseContributionWeights(amounts: number[]) {
-  const total = amounts.reduce((sum, amount) => sum + amount, 0);
+  const scaled = amounts.map(amount => BigInt(amount) * BigInt(10_000));
+  const total = amounts.reduce((sum, amount) => sum + BigInt(amount), BigInt(0));
   if (!total) return defaultWeights(amounts.length);
-  const weights = amounts.map(amount => Math.floor(amount * 10_000 / total));
-  const priority = amounts.map((amount, index) => ({ index, remainder: amount * 10_000 % total }))
-    .sort((a, b) => b.remainder - a.remainder);
+  const weights = scaled.map(amount => Number(amount / total));
+  const priority = scaled.map((amount, index) => ({ index, remainder: amount % total }))
+    .sort((a, b) => a.remainder === b.remainder ? 0 : a.remainder > b.remainder ? -1 : 1);
   const left = 10_000 - weights.reduce((sum, weight) => sum + weight, 0);
   for (const { index } of priority.slice(0, left)) weights[index]++;
   return weights;
@@ -60,16 +61,7 @@ export function fundingSnapshot(ledger: Ledger, through: string) {
       deployed.set(id, (deployed.get(id) ?? 0) + amount);
     }
   }
-  // Use the recorded deal profit for both the cash payout and the retained balance.
-  const completed = cars.filter(car => car.sold && car.sold <= through).map(car => ({
-    ...car,
-    shares: car.shares.map(share => ({
-      ...share,
-      withdrawn: share.withdrawn && (!share.cashWithdrawalDate || share.cashWithdrawalDate <= through),
-      payouts: share.payouts?.filter(payment => payment.date <= through),
-    })),
-  }));
-  const { balances } = totals({ ...ledger, cars: completed });
+  const { balances } = totals(ledger, through);
   const total = [...deployed.values()].reduce((sum, amount) => sum + amount, 0);
 
   return { cars, active, deployed, balances, total };

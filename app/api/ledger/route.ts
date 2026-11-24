@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ledgers } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
-import { emptyLedger, ledgerClientVersion, maxLedgerBytes, parseLedger, readStoredLedger } from "../../ledger";
+import { emptyLedger, maxLedgerBytes, parseLedger, readStoredLedger } from "../../ledger";
 
 export const dynamic = "force-dynamic";
 
@@ -46,10 +46,14 @@ export async function PUT(request: Request) {
   }
   const previousLedger = previous ? readStoredLedger(previous.data) : undefined;
   if (previousLedger === null) return unreadable();
-  // Older editors cannot round-trip some records when rebuilding a vehicle form.
-  if (data.clientVersion !== ledgerClientVersion && previousLedger?.cars.some(car =>
-    (car.cashPurchase && car.shares.some(share => share.buy > 0)) ||
-    (data.clientVersion !== 2 && (car.stageHistory?.length || car.shares.some(share => share.payouts?.length))))) {
+  // Older editors cannot round-trip all cash movements, part fields and vehicle records.
+  const version = Number.isInteger(data.clientVersion) ? data.clientVersion : 1;
+  const losesNewFields = version < 4 && (previousLedger?.cashEntries?.some(entry => entry.allocations?.length)
+    || previousLedger?.cars.some(car => car.parts?.some(part => part.plannedPrice || part.expenseId)));
+  const losesCarFields = previousLedger?.cars.some(car =>
+    (version < 3 && car.cashPurchase && car.shares.some(share => share.buy > 0))
+    || (version < 2 && (car.stageHistory?.length || car.shares.some(share => share.payouts?.length))));
+  if (losesNewFields || losesCarFields) {
     return reply({ error: "Обновите страницу перед сохранением. В книге есть данные, которые эта вкладка не поддерживает." }, 409);
   }
   if (!hasOnlyStoredPhotos(previousLedger, ledger)) return reply({ error: "Фотографии нужно загрузить через карточку автомобиля." }, 422);

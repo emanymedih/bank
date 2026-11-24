@@ -24,7 +24,7 @@ export const maxCarPhotos = 64;
 export const maxPhotoBytes = 1_200_000;
 export const maxPhotosPerUpload = 8;
 export const maxLedgerBytes = 750_000;
-export const ledgerClientVersion = 3;
+export const ledgerClientVersion = 4;
 
 const workEntry = z.object({
   id, name: z.string().trim().min(1).max(100), date: day, notes: z.string().trim().max(750),
@@ -41,7 +41,7 @@ const partLink = z.string().max(400).refine(value => {
 const carPart = z.object({
   id, name: z.string().trim().min(1).max(140),
   article: z.string().trim().max(120).optional(), link: partLink.optional(),
-  acquired: z.boolean(),
+  acquired: z.boolean(), plannedPrice: money.positive().optional(), expenseId: id.optional(),
 });
 export const vehicleStages = ["purchased", "preparation", "listed"] as const;
 export const stageHistoryEntry = z.object({
@@ -69,9 +69,10 @@ const vehicle = z.object({
   parts: z.array(carPart).max(100).optional(),
   shares: z.array(share).min(1).max(16), expenses: z.array(expense).max(500), demo: z.boolean().optional(),
 });
+const cashAllocation = z.object({ partner: id, amount: money.positive() });
 const cashEntry = z.object({
   id, date: day, name: z.string().trim().min(1).max(120), amount: money.positive(),
-  direction: z.enum(["in", "out"]),
+  direction: z.enum(["in", "out"]), allocations: z.array(cashAllocation).max(16).optional(),
 });
 const ledgerSchema = z.object({
   partners: z.array(partner).min(1).max(16), cars: z.array(vehicle).max(500),
@@ -96,8 +97,12 @@ export const stageNames: Record<VehicleStage, string> = {
   purchased: "Куплено", preparation: "Подготовка", listed: "На продаже", sold: "Продано",
 };
 
-export function vehicleStage(car: Car): VehicleStage {
-  return car.sold ? "sold" : car.stage ?? (car.expenses.length || car.works?.length ? "preparation" : "purchased");
+export function vehicleStage(car: Car, through?: string): VehicleStage {
+  if (car.sold && (!through || car.sold <= through)) return "sold";
+  const history = car.stageHistory;
+  const stage = through && history?.length ? history.findLast(entry => entry.date <= through)?.stage : car.stage;
+  const completedWork = (item: { date: string }) => !through || item.date <= through;
+  return stage ?? (car.expenses.some(completedWork) || car.works?.some(completedWork) ? "preparation" : "purchased");
 }
 
 function validStageHistory(car: Car) {
@@ -122,11 +127,18 @@ export function parseLedger(value: unknown): Ledger | null {
   const partnerIds = new Set(partners.map(p => p.id));
   const valid = partnerIds.size === partners.length
     && unique((cashEntries ?? []).map(entry => entry.id))
+    && (cashEntries ?? []).every(entry => {
+      const assigned = entry.allocations ?? [];
+      return unique(assigned.map(item => item.partner)) && assigned.every(item => partnerIds.has(item.partner))
+        && assigned.reduce((sum, item) => sum + item.amount, 0) <= entry.amount;
+    })
     && unique(cars.map(c => c.id)) && cars.every(c => {
     const payout = figures(c);
     const attributedPurchase = c.shares.reduce((sum, share) => sum + share.buy, 0);
     const workIds = new Set(c.works?.map(work => work.id));
     const photos = c.photos ?? [];
+    const expenses = new Set(c.expenses.map(expense => expense.id));
+    const partExpenses = (c.parts ?? []).flatMap(part => part.expenseId ? [part.expenseId] : []);
     return Boolean(c.sold) === Boolean(c.price)
       && (!c.sold || c.sold >= c.bought)
       && validStageHistory(c)
@@ -137,6 +149,7 @@ export function parseLedger(value: unknown): Ledger | null {
       && unique(c.expenses.map(e => e.id))
       && workIds.size === (c.works ?? []).length
       && unique((c.parts ?? []).map(part => part.id))
+      && unique(partExpenses) && partExpenses.every(expenseId => expenses.has(expenseId))
       && unique(photos.map(photo => photo.id))
       && photos.every(photo => photo.phase === "work" ? Boolean(photo.workId && workIds.has(photo.workId)) : !photo.workId)
       && (c.works ?? []).every(work => work.date >= c.bought && (!work.expenseId || c.expenses.some(expense => expense.id === work.expenseId)))
@@ -176,18 +189,25 @@ export function splitAmount(total: number, weights: number[]) {
   return total < 0 ? results.map(value => -value) : results;
 }
 
-export function figures(car: Car) {
-  const expenses = car.expenses.reduce((sum, item) => sum + item.amount, 0);
+export function figures(car: Car, through?: string) {
+  const paidExpenses = through ? car.expenses.filter(item => item.date <= through) : car.expenses;
+  const expenses = paidExpenses.reduce((sum, item) => sum + item.amount, 0);
   const invested = car.buy + expenses;
-  const net = car.price === null ? null : car.price - invested;
+  const net = car.price === null || (through && car.sold && car.sold > through) ? null : car.price - invested;
   const people = Object.create(null) as Record<string, { buy: number; expenses: number; profit: number; paid: number }>;
-  const portions = splitAmount(net ?? 0, car.shares.map(s => s.weight));
+  const weights = car.shares.map(share => share.weight);
+  const portions = splitAmount(net ?? 0, weights);
+  // A legacy withdrawal records the whole booked profit; dated views must show the same debit as the cash journal.
+  const legacy = through && net !== null && paidExpenses.length !== car.expenses.length && car.shares.some(share => share.withdrawn)
+    ? splitAmount(car.price! - car.buy - car.expenses.reduce((sum, item) => sum + item.amount, 0), weights) : portions;
   for (const [index, share] of car.shares.entries()) {
     const profit = portions[index];
-    const paid = share.withdrawn ? profit : (share.payouts ?? []).reduce((sum, payment) => sum + payment.amount, 0);
+    const withdrawalDate = share.cashWithdrawalDate ?? car.sold;
+    const paid = share.withdrawn ? (!through || withdrawalDate && withdrawalDate <= through ? legacy[index] : 0)
+      : (share.payouts ?? []).reduce((sum, payment) => !through || payment.date <= through ? sum + payment.amount : sum, 0);
     people[share.partner] = { buy: car.cashPurchase ? 0 : share.buy, expenses: 0, profit, paid };
   }
-  for (const item of car.expenses) {
+  for (const item of paidExpenses) {
     if (item.payer === null) continue;
     people[item.payer] ??= { buy: 0, expenses: 0, profit: 0, paid: 0 };
     people[item.payer].expenses += item.amount;
@@ -209,44 +229,51 @@ function recordedProfitPayments(car: Car, deal: ReturnType<typeof figures>) {
   });
 }
 
-export function totals(ledger: Ledger) {
+export function totals(ledger: Ledger, through = "9999-12-31") {
   const balances = Object.fromEntries(ledger.partners.map(p => [p.id, 0]));
+  const paid = { ...balances };
   const timeline = new Map<string, { people: Record<string, number>; bank: number }>();
   let invested = 0;
   let net = 0;
   let sold = 0;
+  let active = 0;
   let bank = 0;
   const add = (id: string, amount: number) => { balances[id] += amount; bank += amount; };
-  const deals = [...ledger.cars].sort((a, b) =>
+  const deduct = ({ partner, amount }: { partner: string; amount: number }) => {
+    add(partner, -amount);
+    paid[partner] += amount;
+  };
+  const deals = ledger.cars.filter(car => car.bought <= through).sort((a, b) =>
     (a.sold ?? "9999").localeCompare(b.sold ?? "9999") || a.bought.localeCompare(b.bought) || a.id.localeCompare(b.id))
     .map(car => {
-      const deal = figures(car);
-      return { car, deal, payments: recordedProfitPayments(car, deal) };
+      const deal = figures(car, through);
+      const payments = recordedProfitPayments(car, figures(car)).filter(payment => payment.date <= through);
+      return { car, deal, payments };
     });
   const delayed = deals.flatMap(({ car, payments }) => payments.filter(payment => car.sold && payment.date > car.sold))
     .sort((a, b) => a.date.localeCompare(b.date));
   let nextPayment = 0;
 
   for (const { car, deal, payments } of deals) {
-    if (!car.sold || deal.net === null) {
+    if (!car.sold || car.sold > through || deal.net === null) {
       invested += deal.invested;
+      active++;
       continue;
     }
     sold++;
     net += deal.net;
     while (nextPayment < delayed.length && delayed[nextPayment].date <= car.sold) {
-      const { partner, amount } = delayed[nextPayment++];
-      add(partner, -amount);
+      deduct(delayed[nextPayment++]);
     }
     for (const [id, person] of Object.entries(deal.people)) add(id, person.profit);
     for (const payment of payments) {
-      if (payment.date === car.sold) add(payment.partner, -payment.amount);
+      if (payment.date === car.sold) deduct(payment);
     }
     timeline.set(car.id, { people: { ...balances }, bank });
   }
-  for (const { partner, amount } of delayed.slice(nextPayment)) add(partner, -amount);
+  for (const payment of delayed.slice(nextPayment)) deduct(payment);
 
-  return { balances, bank, invested, net, sold, active: ledger.cars.length - sold, timeline };
+  return { balances, paid, bank, invested, net, sold, active, timeline };
 }
 
 export function defaultWeights(count: number) {
@@ -293,7 +320,8 @@ export function cashSummary(ledger: Ledger, through: string) {
   for (const car of ledger.cars) {
     if (car.cashPurchase) {
       linked.push({ id: car.id + "/buy", carId: car.id, source: "car", date: car.bought,
-        name: "Покупка · " + car.name, amount: car.buy, direction: "out" });
+        name: "Покупка · " + car.name, amount: car.buy, direction: "out",
+        allocations: car.shares.filter(share => share.buy > 0).map(share => ({ partner: share.partner, amount: share.buy })) });
     }
     if (car.cashSale && car.sold && car.price !== null) {
       linked.push({ id: car.id + "/sale", carId: car.id, source: "car", date: car.sold,
@@ -310,19 +338,41 @@ export function cashSummary(ledger: Ledger, through: string) {
       if (!payment.fromCash) continue;
       const name = ledger.partners.find(p => p.id === payment.partner)?.name ?? "";
       linked.push({ id: car.id + "/payout/" + payment.id, carId: car.id, source: "car", date: payment.date,
-        name: "Выплата · " + name + " · " + car.name, amount: payment.amount, direction: "out" });
+        name: "Выплата · " + name + " · " + car.name, amount: payment.amount, direction: "out",
+        allocations: [{ partner: payment.partner, amount: payment.amount }] });
     }
   }
 
   const entries = [...manual, ...linked].sort((a, b) => b.date.localeCompare(a.date));
   let income = 0;
   let spending = 0;
+  let salesIncome = 0;
+  const incomeBySource = new Map<string | null, number>();
+  const balanceBySource = new Map<string | null, number>();
+  const accumulate = (map: Map<string | null, number>, partner: string | null, amount: number) => {
+    if (amount) map.set(partner, (map.get(partner) ?? 0) + amount);
+  };
   for (const entry of entries) {
     if (entry.date > through) continue;
-    if (entry.direction === "in") income += entry.amount;
-    else spending += entry.amount;
+    const incoming = entry.direction === "in";
+    if (incoming) {
+      income += entry.amount;
+      if (entry.source === "car") salesIncome += entry.amount;
+    } else spending += entry.amount;
+    for (const { partner, amount } of cashEntryBreakdown(entry)) {
+      accumulate(balanceBySource, partner, incoming ? amount : -amount);
+      if (incoming && entry.source === "manual") accumulate(incomeBySource, partner, amount);
+    }
   }
-  return { entries, income, spending, balance: income - spending };
+  return { entries, income, spending, balance: income - spending, salesIncome, incomeBySource, balanceBySource };
+}
+
+export function cashEntryBreakdown(entry: CashEntry) {
+  const assigned = entry.allocations ?? [];
+  const remaining = entry.amount - assigned.reduce((sum, item) => sum + item.amount, 0);
+  const items: { partner: string | null; amount: number }[] = [...assigned];
+  if (remaining > 0) items.push({ partner: null, amount: remaining });
+  return items;
 }
 
 const priceBands = [
@@ -342,16 +392,16 @@ export function yearsWithActivity(ledger: Ledger, currentYear: string) {
   return [...years].sort((a, b) => b.localeCompare(a));
 }
 
-export function yearAnalytics(ledger: Ledger, year: string) {
+export function yearAnalytics(ledger: Ledger, year: string, through = "9999-12-31") {
   const months = Array.from({ length: 12 }, () => ({ expenses: 0, profit: 0, sales: 0 }));
   const bands = priceBands.map(band => ({ ...band, count: 0, profit: 0, invested: 0 }));
   const monthOf = (value: string) => months[Number(value.slice(5, 7)) - 1];
   for (const car of ledger.cars) {
     for (const expense of car.expenses) {
-      if (expense.date.startsWith(year + "-")) monthOf(expense.date).expenses += expense.amount;
+      if (expense.date <= through && expense.date.startsWith(year + "-")) monthOf(expense.date).expenses += expense.amount;
     }
-    if (!car.sold?.startsWith(year + "-")) continue;
-    const deal = figures(car);
+    if (!car.sold?.startsWith(year + "-") || car.sold > through) continue;
+    const deal = figures(car, through);
     if (deal.net === null) continue;
     const month = monthOf(car.sold);
     month.sales++;

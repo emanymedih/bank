@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { BarChart3, ChevronDown, Plus, Wallet } from "lucide-react";
-import { cashSummary, yearAnalytics, yearsWithActivity } from "./ledger";
+import { BarChart3, ChevronDown, ChevronRight, Plus, Wallet } from "lucide-react";
+import { cashEntryBreakdown, cashSummary, yearAnalytics, yearsWithActivity } from "./ledger";
 import type { Ledger } from "./ledger";
 import { CapitalPortfolio } from "./funding-view";
+import { purchaseContributionWeights } from "./purchase-funding";
 import type { FundingMode } from "./purchase-funding";
 
 const months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
@@ -17,7 +18,7 @@ export function Analytics({ ledger, today, rub }: { ledger: Ledger; today: strin
   const years = yearsWithActivity(ledger, today.slice(0, 4));
   const [selectedYear, setYear] = useState(years[0]);
   const year = years.includes(selectedYear) ? selectedYear : years[0];
-  const results = yearAnalytics(ledger, year);
+  const results = yearAnalytics(ledger, year, today);
   const [monthIndex, setMonth] = useState<number | null>(null);
   const lastActive = results.months.findLastIndex(month => month.sales > 0 || month.expenses > 0);
   const selected = monthIndex ?? (lastActive >= 0 ? lastActive : Number(today.slice(5, 7)) - 1);
@@ -76,7 +77,9 @@ export function Analytics({ ledger, today, rub }: { ledger: Ledger; today: strin
   </>;
 }
 
-export type CashTab = "journal" | "capital";
+export type CashTab = "journal" | "income" | "spending" | "capital";
+
+const cashPercent = new Intl.NumberFormat("ru-RU", { style: "percent", maximumFractionDigits: 2 });
 
 export function CashJournal({ ledger, today, rub, formatDate, onAdd, onEdit, onCar, tab, onTab, mode, onMode }: {
   ledger: Ledger; today: string; rub: (value: number) => string; formatDate: (value: string) => string;
@@ -84,28 +87,59 @@ export function CashJournal({ ledger, today, rub, formatDate, onAdd, onEdit, onC
   tab: CashTab; onTab: (tab: CashTab) => void; mode: FundingMode; onMode: (mode: FundingMode) => void;
 }) {
   const cash = cashSummary(ledger, today);
+  const partnerName = (id: string | null) => id === null ? "Без распределения" : ledger.partners.find(p => p.id === id)?.name ?? "";
+  const rows = cash.entries.filter(entry => tab === "income" ? entry.direction === "in"
+    : tab === "spending" ? entry.direction === "out" : true);
+  const sources = ledger.partners.flatMap(person => {
+    const amount = cash.incomeBySource.get(person.id);
+    return amount ? [{ name: person.name, amount }] : [];
+  });
+  const unassigned = cash.incomeBySource.get(null) ?? 0;
+  if (unassigned) sources.push({ name: "Без распределения", amount: unassigned });
+  if (cash.salesIncome) sources.push({ name: "Продажи авто", amount: cash.salesIncome });
+  const shares = purchaseContributionWeights(sources.map(source => source.amount));
+
   return <>
     <div className="metrics analytics-metrics">
       <div className="metric hero"><span className="metric-title"><Wallet size={18}/> Доступно на покупку</span><strong>{cash.entries.length ? rub(cash.balance) : "—"}</strong><small>Остаток в кассе на сегодня</small></div>
-      <div className="metric"><span className="metric-title">Поступления</span><strong>{rub(cash.income)}</strong><small>С начала учёта</small></div>
-      <div className="metric"><span className="metric-title">Списания</span><strong>{rub(cash.spending)}</strong><small>С начала учёта</small></div>
+      <button className="metric cash-drilldown" type="button" aria-pressed={tab === "income"} onClick={() => onTab(tab === "income" ? "journal" : "income")}>
+        <span className="metric-title">Поступления <ChevronRight size={17} aria-hidden="true"/></span><strong>{rub(cash.income)}</strong><small>Разбивка по источникам</small>
+      </button>
+      <button className="metric cash-drilldown" type="button" aria-pressed={tab === "spending"} onClick={() => onTab(tab === "spending" ? "journal" : "spending")}>
+        <span className="metric-title">Списания <ChevronRight size={17} aria-hidden="true"/></span><strong>{rub(cash.spending)}</strong><small>Операции с начала учёта</small>
+      </button>
     </div>
     <div className="funding-switch cash-tabs" role="group" aria-label="Раздел кассы">
-      <button type="button" aria-pressed={tab === "journal"} onClick={() => onTab("journal")}>Движение денег</button>
+      <button type="button" aria-pressed={tab !== "capital"} onClick={() => onTab("journal")}>Движение денег</button>
       <button type="button" aria-pressed={tab === "capital"} onClick={() => onTab("capital")}>Капитал в авто</button>
     </div>
     {tab === "capital" ? <CapitalPortfolio ledger={ledger} today={today} mode={mode} onMode={onMode}
-      rub={rub} formatDate={formatDate} onCar={onCar}/> : <section className="panel insights-panel">
-      <div className="section-header"><div><h2>Движение денег</h2><p>Покупки, расходы и продажи из карточек появляются здесь, когда выбрана общая касса.</p></div></div>
-      {cash.entries.length ? <ul className="cash-list">{cash.entries.map(entry => <li key={entry.source + entry.id}>
-        <button onClick={() => entry.source === "car" ? onCar(entry.carId) : onEdit(entry.id)}>
-          <span><b>{entry.name}</b><small>{formatDate(entry.date)}{entry.date > today ? " · Запланировано" : ""}</small></span>
-          <strong className={entry.direction === "in" ? "positive" : "negative"}>{entry.direction === "in" ? "+" : "−"}{rub(entry.amount)}</strong>
-        </button>
-      </li>)}</ul> : <div className="empty"><div className="empty-icon"><Wallet size={25}/></div><h3>Касса пока пустая</h3>
-        <p>Запишите начальный остаток как пополнение. Возврат личных вложений можно записать как списание.</p>
-        <button className="button primary" onClick={onAdd}><Plus size={17}/>Добавить движение</button>
-      </div>}
-    </section>}
+      rub={rub} formatDate={formatDate} onCar={onCar}/> : <>
+      {tab === "income" && <section className="panel insights-panel" aria-labelledby="cash-income-title">
+        <div className="section-header">
+          <div><h2 id="cash-income-title">Из чего сложились поступления</h2><p>Суммы и доли от всех поступлений на сегодня.</p></div>
+        </div>
+        {sources.length ? <dl className="cash-source-list">{sources.map((source, index) => <div key={index}>
+          <dt>{source.name}</dt><dd>{rub(source.amount)} <small>{cashPercent.format(shares[index] / 10_000)}</small></dd>
+        </div>)}</dl> : <p className="cash-source-list">Проведённых поступлений пока нет.</p>}
+        {unassigned > 0 && <p className="cash-source-list cash-source-hint">Откройте нужное пополнение ниже, чтобы указать, кто внёс деньги.</p>}
+      </section>}
+      <section className="panel insights-panel">
+        <div className="section-header"><div><h2>{tab === "income" ? "Журнал поступлений" : tab === "spending" ? "Журнал списаний" : "Движение денег"}</h2>
+          {tab === "journal" && <p>Здесь видны ручные движения и операции по автомобилям, проведённые через общую кассу.</p>}</div></div>
+        {rows.length ? <ul className="cash-list">{rows.map(entry => <li key={entry.source + entry.id}>
+          <button onClick={() => entry.source === "car" ? onCar(entry.carId) : onEdit(entry.id)}>
+            <span><b>{entry.name}</b><small>{formatDate(entry.date)}{entry.date > today ? " · Запланировано" : ""}</small>
+              {(entry.allocations?.length || entry.source === "manual" && entry.direction === "in") ?
+                <small className="cash-entry-source">{cashEntryBreakdown(entry).map(item => partnerName(item.partner) + " · " + rub(item.amount)).join(" / ")}</small>
+                : null}
+            </span>
+            <strong className={entry.direction === "in" ? "positive" : "negative"}>{entry.direction === "in" ? "+" : "−"}{rub(entry.amount)}</strong>
+          </button>
+        </li>)}</ul> : <div className="empty"><div className="empty-icon"><Wallet size={25}/></div><h3>{tab === "journal" ? "Касса пока пустая" : "Операций пока нет"}</h3>
+          <button className="button primary" onClick={onAdd}><Plus size={17}/>Добавить движение</button>
+        </div>}
+      </section>
+    </>}
   </>;
 }

@@ -112,12 +112,15 @@ export function WorkHistory({ car, busy, error, source, dateLabel, onUpload, onW
   </div>;
 }
 
-export function PartPlan({ car, busy, error, onAdd, onBatch, onEdit, onRemove, onExpense, onToggle }: {
-  car: Car; busy: boolean; error: string; onAdd: () => void; onBatch: () => void;
+export function PartPlan({ car, busy, error, rub, onAdd, onBatch, onEdit, onRemove, onExpense, onToggle }: {
+  car: Car; busy: boolean; error: string; rub: (amount: number) => string; onAdd: () => void; onBatch: () => void;
   onEdit: (part: CarPart) => void; onRemove: (part: CarPart) => void;
   onExpense: (part: CarPart) => void; onToggle: (part: CarPart) => void;
 }) {
   const items = car.parts ?? [];
+  const expenses = new Map(car.expenses.map(expense => [expense.id, expense.amount]));
+  const plannedTotal = items.reduce((sum, part) => sum + (part.plannedPrice ?? 0), 0);
+  const actualTotal = items.reduce((sum, part) => sum + (part.expenseId ? expenses.get(part.expenseId) ?? 0 : 0), 0);
   return <div className="prep">
     <div className="prep-report part-top">
       <div><h3>Список запчастей</h3><p>Отметьте купленное и добавьте расход, когда известна фактическая сумма.</p></div>
@@ -127,24 +130,25 @@ export function PartPlan({ car, busy, error, onAdd, onBatch, onEdit, onRemove, o
       </div>
     </div>
     {error && <p className="form-error" role="alert">{error}</p>}
+    {(plannedTotal > 0 || actualTotal > 0) && <dl className="part-totals">
+      {plannedTotal > 0 && <div><dt>По указанным ценам</dt><dd>{rub(plannedTotal)}</dd></div>}
+      {actualTotal > 0 && <div><dt>В расходах по списку</dt><dd>{rub(actualTotal)}</dd></div>}
+    </dl>}
     {items.length ? <ul className="part-list">{items.map(part => <li key={part.id}>
-      <label className="part-title"><input type="checkbox" disabled={busy} checked={part.acquired}
+      <label className="part-title"><input type="checkbox" disabled={busy || Boolean(part.expenseId)} checked={part.acquired}
         aria-label={"Куплено: " + part.name} onChange={() => onToggle(part)}/>
-        <span><b>{part.name}</b>{part.article && <small>Артикул · {part.article}</small>}</span></label>
+        <span><b>{part.name}</b>{part.article && <small>Артикул · {part.article}</small>}
+          {part.plannedPrice && <small>План · {rub(part.plannedPrice)}</small>}
+          {part.expenseId && <small>В расходах · {rub(expenses.get(part.expenseId) ?? 0)}</small>}
+        </span></label>
       <div className="part-row-actions">
         {part.link && <a className="icon-button" aria-label="Открыть объявление" href={part.link} target="_blank" rel="noreferrer"><ExternalLink size={15}/></a>}
-        <button className="button secondary" onClick={() => onExpense(part)}><Check size={16}/>В расходы</button>
+        <button className="button secondary" onClick={() => onExpense(part)}>
+          {part.expenseId ? <Pencil size={16}/> : <Check size={16}/>}{part.expenseId ? "Изменить расход" : "В расходы"}
+        </button>
         <button className="icon-button" aria-label={"Изменить " + part.name} onClick={() => onEdit(part)}><Pencil size={15}/></button>
         <button className="icon-button" aria-label={"Удалить " + part.name} onClick={() => onRemove(part)}><Trash2 size={15}/></button>
       </div>
     </li>)}</ul> : <div className="empty prep-empty"><ClipboardList size={23}/><p>Пока нет запчастей в плане.</p></div>}
   </div>;
-}
-
-export function parsePartList(value: string) {
-  const items = value.split(/[\n;,]+|\s+(?:запятая|новая строка)\s+/iu)
-    .map(line => line.trim().replace(/^(?:[-•–]\s+|\d+\.\s+)/u, "")
-      .replace(/^(?:(?:мне\s+)?(?:на\s+(?:неё|нее|него|машину)\s+)?нуж(?:ен|на|но|ны)\s+|(?:добавь|найди|купи)\s+)/iu, "").trim())
-    .filter(Boolean);
-  return [...new Map(items.map(item => [item.toLocaleLowerCase("ru"), item])).values()];
 }

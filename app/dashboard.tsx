@@ -16,7 +16,9 @@ import type { CashTab } from "./insights";
 import { VehicleFunding } from "./funding-view";
 import { purchaseContributionAmounts, purchaseContributionWeights } from "./purchase-funding";
 import type { FundingMode } from "./purchase-funding";
-import { parsePartList, PartPlan, preparePhotos, WorkHistory } from "./car-prep";
+import { PartPlan, preparePhotos, WorkHistory } from "./car-prep";
+import { parsePartList } from "./part-import";
+import type { PartDraft } from "./part-import";
 import { downloadBuyerReport } from "./car-report";
 import { PlatePhoto } from "./plate-photo";
 import { ContractForm } from "./contract-form";
@@ -67,12 +69,12 @@ function parseMoney(input: FormDataEntryValue | null) {
   return /^\d+(?:\.\d{1,2})?$/.test(value) ? Math.round(Number(value) * 100) : NaN;
 }
 
-function exportLedger(ledger: Ledger) {
-  const summary = totals(ledger);
+function exportLedger(ledger: Ledger, through: string) {
+  const summary = totals(ledger, through);
   const columns = ["Автомобиль", "Год выпуска", "Госномер", "VIN", "Пробег", "Дата покупки", "Дата продажи", "Покупка, ₽", "Расходы, ₽", "Продажа, ₽", "Чистая прибыль, ₽",
     ...ledger.partners.flatMap(p => [p.name + " — забрал прибыль", p.name + " — накопления, ₽"]), "Накопленная прибыль, ₽"];
   const rows = ledger.cars.map(c => {
-    const deal = figures(c);
+    const deal = figures(c, through);
     const balance = summary.timeline.get(c.id);
     return [c.name, c.year ?? "", c.registration ?? "", c.vin, c.mileage ?? "", c.bought, c.sold ?? "", moneyText(c.buy), moneyText(deal.expenses),
       c.price === null ? "" : moneyText(c.price), deal.net === null ? "" : moneyText(deal.net),
@@ -118,9 +120,9 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
   const [actions, setActions] = useState(false);
   const writeLock = useRef(false);
   const selectedCar = ledger.cars.find(c => c.id === selected);
-  const summary = totals(ledger);
-  const demo = ledger.cars.some(c => c.demo);
   const currentDate = today();
+  const summary = totals(ledger, currentDate);
+  const demo = ledger.cars.some(c => c.demo);
   const cash = cashSummary(ledger, currentDate);
   const photoSource = (photo: CarPhoto) => demoPhotoUrls.current.get(photo.id) ??
     "/api/photos/" + encodeURIComponent(selectedCar?.id ?? "") + "?id=" + encodeURIComponent(photo.id);
@@ -279,10 +281,16 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
     const normalized = (c.name + " " + c.vin).toLocaleLowerCase("ru").normalize("NFD").replace(/\p{Diacritic}/gu, "");
     const plateTerm = plateKey(query);
     const plateMatches = Boolean(c.registration && plateTerm && plateKey(c.registration).includes(plateTerm));
-    return (normalized.includes(term) || plateMatches) && (filter === "all" || (filter === "active" ? !c.sold : vehicleStage(c) === filter));
+    const stage = vehicleStage(c, currentDate);
+    return (normalized.includes(term) || plateMatches) && (filter === "all" || c.bought <= currentDate
+      && (filter === "active" ? stage !== "sold" : stage === filter));
   }).sort((a, b) => {
     if (sort === "old") return a.bought.localeCompare(b.bought);
-    if (sort === "profit") return (figures(b).net ?? -Infinity) - (figures(a).net ?? -Infinity);
+    if (sort === "profit") {
+      const first = figures(a, currentDate).net;
+      const second = figures(b, currentDate).net;
+      if (first !== second) return first === null ? 1 : second === null ? -1 : second - first;
+    }
     return b.bought.localeCompare(a.bought);
   });
 
@@ -326,7 +334,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
           {view === "cars" && loaded && <span>{summary.active} в работе · {summary.sold} продано</span>}
         </div>
         <div className="header-right">
-          {view === "cars" && <button className="button secondary export" aria-label="Экспорт CSV" onClick={() => exportLedger(ledger)} disabled={!loaded}><Download size={16}/><span>CSV</span></button>}
+          {view === "cars" && <button className="button secondary export" aria-label="Экспорт CSV" onClick={() => exportLedger(ledger, currentDate)} disabled={!loaded}><Download size={16}/><span>CSV</span></button>}
           {view !== "analytics" && <button className="button primary" onClick={() => open({ type: view === "cars" ? "car" : view === "cash" ? "cash" : "partner" })}
             disabled={!loaded}><Plus size={19}/><span>{view === "cars" ? "Добавить авто" : view === "cash" ? "Добавить движение" : "Добавить партнёра"}</span></button>}
         </div>
@@ -344,7 +352,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
           : view === "cars" ? <>
             <FinanceStrip cash={cash.entries.length ? cash.balance : null} retained={summary.bank} invested={summary.invested}
               rub={rub} onCash={() => changeView("cash")}/>
-            <StageBoard cars={ledger.cars} filter={filter} onFilter={setFilter}/>
+            <StageBoard cars={ledger.cars} today={currentDate} filter={filter} onFilter={setFilter}/>
             <div className="work-columns">
               <VehicleRegistry cars={cars} ledger={ledger} summary={summary} currentDate={currentDate} dateLabel={dateLabel}
                 rub={rub} number={format.format} selected={selected} filter={filter} sort={sort} query={query} mode={registryMode}
@@ -354,16 +362,26 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
                 onPlan={id => { select(id); open({ type: "progress", id }); }}/>
             </div>
           </> : <section className="panel partners partner-book">
-            <div className="section-header"><div><h2>Расчёты с партнёрами</h2><p>Взносы и доли задаются в карточке автомобиля.</p></div></div>
+            <div className="section-header">
+              <div><h2>Расчёты с партнёрами</h2><p>В остатке видны поступления и списания, отнесённые на партнёра. Прибыль и выплаты считаются по закрытым сделкам.</p></div>
+              <button className="button secondary" type="button" onClick={() => { changeView("cash"); setCashTab("income"); }}>Разобрать поступления</button>
+            </div>
+            <dl className="partner-bank-summary">
+              <div><dt>Всего в кассе</dt><dd>{rub(cash.balance)}</dd></div>
+              <div><dt>Без распределения</dt><dd>{rub(cash.balanceBySource.get(null) ?? 0)}</dd></div>
+            </dl>
+            {Boolean(cash.balanceBySource.get(null)) && <p className="partner-bank-note">Общие движения и записи без указанных долей остаются в сумме «Без распределения».</p>}
+            {ledger.partners.some(person => (cash.balanceBySource.get(person.id) ?? 0) < 0) && <p className="partner-bank-note">Отрицательная сумма показывает, на сколько записанные списания превышают записанные пополнения партнёра.</p>}
             <div className="partner-grid">
               {ledger.partners.map((p, index) => {
-                const withdrawn = ledger.cars.reduce((sum, c) => {
-                  const share = figures(c).people[p.id];
-                  return sum + (share?.paid ?? 0);
-                }, 0);
+                const attributed = cash.balanceBySource.get(p.id);
                 return <div className="partner" key={p.id}>
                   <div className="partner-head"><span className={"avatar tone-" + (index % 4)}>{initials(p)}</span><b>{p.name}</b><button className="icon-button" onClick={() => open({ type: "partner", id: p.id })} aria-label={"Редактировать " + p.name}><Pencil size={17}/></button></div>
-                  <div className="partner-totals"><div><small>В банке</small><strong>{rub(summary.balances[p.id])}</strong></div><div><small>Забрал</small><strong>{rub(withdrawn)}</strong></div></div>
+                  <div className="partner-totals">
+                    <div><small>Остаток по кассе</small><strong>{attributed === undefined ? "—" : rub(attributed)}</strong></div>
+                    <div><small>{summary.balances[p.id] < 0 ? "Результат после выплат" : "Остаток прибыли"}</small><strong>{rub(summary.balances[p.id])}</strong></div>
+                    <div><small>Выплачено прибыли</small><strong>{rub(summary.paid[p.id])}</strong></div>
+                  </div>
                 </div>;
               })}
             </div>
@@ -400,7 +418,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
           aria-pressed={carTab === tab} onClick={() => { setCarTab(tab); setError(""); }}>{carTabs[tab]}</button>)}
       </div>
       {carTab === "timeline" ? <>
-        <VehicleTotals car={selectedCar}/>
+        <VehicleTotals car={selectedCar} through={currentDate}/>
         <VehicleFunding car={selectedCar} partners={ledger.partners} through={currentDate} mode={fundingMode}
           onMode={setFundingMode} onPortfolio={view === "cash" && cashTab === "capital" ? undefined : () => {
             setCashTab("capital");
@@ -422,13 +440,14 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
         onWork={work => open({type:"work", id:selectedCar.id, workId:work?.id})}
         onPhoto={photo => open({type:"photo", id:selectedCar.id, photoId:photo.id})}
         onReport={() => open({type:"report", id:selectedCar.id})}/>
-      : carTab === "parts" ? <PartPlan car={selectedCar} busy={busy} error={dialog ? "" : error}
+      : carTab === "parts" ? <PartPlan car={selectedCar} busy={busy} error={dialog ? "" : error} rub={rub}
         onAdd={() => open({type:"part", id:selectedCar.id})} onBatch={() => open({type:"part-list", id:selectedCar.id})}
         onEdit={part => open({type:"part", id:selectedCar.id, partId:part.id})}
-        onExpense={part => open({type:"expense", id:selectedCar.id, partId:part.id})}
+        onExpense={part => open({type:"expense", id:selectedCar.id, partId:part.id, expense:part.expenseId})}
         onToggle={part => void saveCar({ ...selectedCar, parts: selectedCar.parts?.map(item =>
           item.id === part.id ? { ...item, acquired: !item.acquired } : item) }, part.acquired ? "Позиция отмечена к покупке" : "Позиция отмечена купленной")}
-        onRemove={part => open({ type:"confirm", title:"Удалить запчасть из списка?", message:part.name,
+        onRemove={part => open({ type:"confirm", title:"Удалить запчасть из списка?",
+          message:part.name + (part.expenseId ? ". Связанный расход останется в сделке." : ""),
           label:"Удалить позицию", action:() => saveCar({ ...selectedCar, parts: selectedCar.parts?.filter(item => item.id !== part.id) }, "Позиция удалена") })}/>
       : <CarDetails car={selectedCar} ledger={ledger} busy={busy} error={dialog ? "" : error}
         onExpense={expense => open({ type: "expense", id: selectedCar.id, expense })}
@@ -436,6 +455,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
           label: "Удалить расход", action: () => saveCar({
             ...selectedCar, expenses: selectedCar.expenses.filter(e => e.id !== expense.id),
             works: selectedCar.works?.map(work => work.expenseId === expense.id ? { ...work, expenseId: undefined } : work),
+            parts: selectedCar.parts?.map(part => part.expenseId === expense.id ? { ...part, expenseId: undefined } : part),
           }, "Расход удалён") })}
         onSale={() => open({ type: "sale", id: selectedCar.id })}
         onPayout={(id, paymentId) => open({ type: "payout", id: selectedCar.id, partnerId: id, paymentId })}
@@ -464,12 +484,12 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
           }
         }}/>
       : dialog.type === "expense" ? selectedCar && <ExpenseForm car={selectedCar} partners={ledger.partners}
-        expense={selectedCar.expenses.find(e => e.id === dialog.expense)} preset={selectedCar.parts?.find(part => part.id === dialog.partId)?.name}
+        expense={selectedCar.expenses.find(e => e.id === dialog.expense)} part={selectedCar.parts?.find(part => part.id === dialog.partId)}
         error={error} setError={setError} busy={busy} onCancel={() => open(null)}
         onBatch={dialog.expense || dialog.partId ? undefined : () => open({ type: "batch-expenses", id: selectedCar.id })}
         onSave={async expense => {
           const expenses = dialog.expense ? selectedCar.expenses.map(e => e.id === expense.id ? expense : e) : [...selectedCar.expenses, expense];
-          const parts = selectedCar.parts?.map(part => part.id === dialog.partId ? { ...part, acquired: true } : part);
+          const parts = selectedCar.parts?.map(part => part.id === dialog.partId ? { ...part, acquired: true, expenseId: expense.id } : part);
           if (await saveCar({ ...selectedCar, expenses, parts }, dialog.expense ? "Расход обновлён" : "Расход добавлен")) open(null);
         }}/>
       : dialog.type === "batch-expenses" ? selectedCar && <BatchExpenseForm car={selectedCar} partners={ledger.partners}
@@ -501,11 +521,13 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
           if (await saveCar({ ...selectedCar, parts:next }, "Запчасть сохранена")) open(null);
         }}/>
       : dialog.type === "part-list" ? selectedCar && <PartListForm error={error} setError={setError} busy={busy} onCancel={() => open(null)}
-        onSave={async names => {
+        replaceable={selectedCar.parts?.filter(part => !part.acquired && !part.expenseId).length ?? 0}
+        onSave={async (drafts, replaceUnpurchased) => {
           const parts = selectedCar.parts ?? [];
-          if (parts.length + names.length > 100) { setError("В списке может быть до 100 позиций."); return; }
-          const next = names.map(name => ({id:crypto.randomUUID(), name, acquired:false}));
-          if (await saveCar({ ...selectedCar, parts:[...parts, ...next] }, "Список пополнен")) open(null);
+          const retained = replaceUnpurchased ? parts.filter(part => part.acquired || part.expenseId) : parts;
+          if (retained.length + drafts.length > 100) { setError("В списке может быть до 100 позиций."); return; }
+          const next = drafts.map(draft => ({ ...draft, id:crypto.randomUUID(), acquired:false }));
+          if (await saveCar({ ...selectedCar, parts:[...retained, ...next] }, replaceUnpurchased ? "Список обновлён" : "Список пополнен")) open(null);
         }}/>
       : dialog.type === "photo" ? selectedCar && <PhotoForm photo={selectedCar.photos?.find(photo => photo.id === dialog.photoId)}
         error={error} busy={busy} onCancel={() => open(null)}
@@ -561,7 +583,7 @@ export default function Dashboard({ signedIn, signInUrl, sellerScope }: { signed
           label: "Удалить выплату", action: () => saveCar({ ...selectedCar, shares: selectedCar.shares.map(share =>
             share.partner === dialog.partnerId ? { ...share, payouts: share.payouts?.filter(payment => payment.id !== dialog.paymentId) }
               : share) }, "Выплата удалена") }) : undefined}/>
-      : dialog.type === "cash" ? <CashForm entry={ledger.cashEntries?.find(entry => entry.id === dialog.id)}
+      : dialog.type === "cash" ? <CashForm entry={ledger.cashEntries?.find(entry => entry.id === dialog.id)} partners={ledger.partners}
         error={error} setError={setError} busy={busy} onCancel={() => open(null)} onSave={async entry => {
           const entries = ledger.cashEntries ?? [];
           const cashEntries = dialog.id ? entries.map(item => item.id === entry.id ? entry : item) : [...entries, entry];
@@ -614,10 +636,10 @@ function VehicleInspector({ wide, identity, onClose, inactive, children }: {
     : <Overlay side title="Карточка автомобиля" onClose={onClose} inactive={inactive}>{children}</Overlay>;
 }
 
-function VehicleTotals({ car }: { car: Car }) {
-  const calc = figures(car);
+function VehicleTotals({ car, through }: { car: Car; through: string }) {
+  const calc = figures(car, through);
   return <dl className="vehicle-totals">
-    <div><dt>Вложено</dt><dd>{rub(calc.invested)}</dd></div>
+    <div><dt>Вложено</dt><dd>{car.bought <= through ? rub(calc.invested) : "—"}</dd></div>
     <div><dt>{car.sold ? "Продажа" : "Цена объявления"}</dt><dd>{car.price ? rub(car.price) : car.askingPrice ? rub(car.askingPrice) : "—"}</dd></div>
     <div><dt>Чистая прибыль</dt><dd className={profitColor(calc.net)}>{calc.net === null ? "—" : rub(calc.net)}</dd></div>
   </dl>;
@@ -651,8 +673,9 @@ function CarDetails({ car, ledger, busy, error, onExpense, onDeleteExpense, onSa
   onExpense: (expense?: string) => void; onDeleteExpense: (expense: Expense) => void; onSale: () => void;
   onPayout: (id: string, paymentId?: string) => void; onRemoveLegacyPayout: (id: string) => void;
 }) {
-  const calc = figures(car);
-  const snapshot = totals(ledger).timeline.get(car.id);
+  const through = today();
+  const calc = figures(car, through);
+  const snapshot = totals(ledger, through).timeline.get(car.id);
   const people = ledger.partners.filter(p => {
     const person = calc.people[p.id];
     return Boolean(person?.buy || person?.expenses || car.shares.some(share => share.partner === p.id && (share.weight || share.buy)));
@@ -1011,8 +1034,8 @@ function CarForm({ car, partners, knownCars, signedIn, defaultToCash, error, set
   </form>;
 }
 
-function ExpenseForm({ car, partners, expense, preset, error, setError, busy, onCancel, onSave, onBatch }: FormProps & {
-  car: Car; partners: Partner[]; expense?: Expense; preset?: string; setError: (error: string) => void;
+function ExpenseForm({ car, partners, expense, part, error, setError, busy, onCancel, onSave, onBatch }: FormProps & {
+  car: Car; partners: Partner[]; expense?: Expense; part?: CarPart; setError: (error: string) => void;
   onSave: (expense: Expense) => Promise<void>; onBatch?: () => void;
 }) {
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -1029,10 +1052,10 @@ function ExpenseForm({ car, partners, expense, preset, error, setError, busy, on
   return <form onSubmit={submit}>
     {onBatch && <button className="button secondary batch-entry" type="button" onClick={onBatch}><Mic size={16}/>Добавить списком или голосом</button>}
     <div className="form-grid">
-      <label className="field wide">На что потратили<input name="name" defaultValue={(expense?.name ?? preset)?.slice(0, 90)} placeholder="Например, комплект шин" required maxLength={90}/></label>
-      <label className="field">Сумма, ₽<MoneyField name="amount" value={expense ? moneyText(expense.amount) : undefined}/></label>
+      <label className="field wide">На что потратили<input name="name" defaultValue={(expense?.name ?? part?.name)?.slice(0, 90)} placeholder="Например, комплект шин" required maxLength={90}/></label>
+      <label className="field">Сумма, ₽<MoneyField name="amount" value={expense ? moneyText(expense.amount) : part?.plannedPrice ? moneyText(part.plannedPrice) : undefined}/></label>
       <label className="field">Дата расхода<input type="date" name="date" min={car.bought} defaultValue={expense?.date ?? (car.bought > today() ? car.bought : today())} required/></label>
-      <label className="field">Статья<select name="category" defaultValue={expense?.category ?? (preset ? "Запчасти" : "")}>
+      <label className="field">Статья<select name="category" defaultValue={expense ? expense.category ?? "" : part ? "Запчасти" : ""}>
         <option value="">Без статьи</option>{expenseCategories.map(category => <option key={category}>{category}</option>)}
       </select></label>
       <label className="field">Кто оплатил<select name="payer" defaultValue={expense ? expense.payer ?? "" : car.cashPurchase ? "" : car.shares[0]?.partner}>
@@ -1119,26 +1142,56 @@ function PayoutForm({ car, person, payment, error, setError, busy, onCancel, onS
   </form>;
 }
 
-function CashForm({ entry, error, setError, busy, onCancel, onSave, onDelete }: FormProps & {
-  entry?: CashEntry; setError: (value: string) => void; onSave: (entry: CashEntry) => Promise<void>; onDelete?: () => void;
+function CashForm({ entry, partners, error, setError, busy, onCancel, onSave, onDelete }: FormProps & {
+  entry?: CashEntry; partners: Partner[]; setError: (value: string) => void; onSave: (entry: CashEntry) => Promise<void>; onDelete?: () => void;
 }) {
+  const [amountInput, setAmount] = useState(entry ? moneyText(entry.amount) : "");
+  const [direction, setDirection] = useState(entry?.direction ?? "in");
+  const [assigned, setAssigned] = useState(Boolean(entry?.allocations?.length));
+  const [draft, setDraft] = useState(() => new Map(entry?.allocations?.map(item => [item.partner, moneyText(item.amount)])));
+  const amount = parseMoney(amountInput);
+  const hasAmount = range(amount, 1, 100_000_000_000);
+  const allocations = assigned ? partners.flatMap(person => {
+    const raw = draft.get(person.id)?.trim();
+    const value = raw ? parseMoney(raw) : 0;
+    return value === 0 ? [] : [{ partner: person.id, amount: value }];
+  }) : [];
+  const allocated = allocations.reduce((sum, item) => sum + item.amount, 0);
+  const invalid = allocations.some(item => !range(item.amount, 1, 100_000_000_000));
+  const difference = !hasAmount || invalid ? null : amount - allocated;
+
   return <form onSubmit={e => {
     e.preventDefault();
     const values = new FormData(e.currentTarget);
-    const amount = parseMoney(values.get("amount"));
     const name = String(values.get("name")).trim();
-    if (!name || !range(amount, 1, 100_000_000_000)) {
-      setError("Введите название и положительную сумму."); return;
+    if (!name || !hasAmount) { setError("Введите название и положительную сумму."); return; }
+    if (invalid || difference === null || difference < 0) {
+      setError("Проверьте суммы по партнёрам. Вместе они должны укладываться в сумму операции."); return;
     }
     void onSave({ id: entry?.id ?? crypto.randomUUID(), amount, name, date: String(values.get("date")),
-      direction: values.get("direction") === "out" ? "out" : "in" });
+      direction, allocations: allocations.length ? allocations : undefined });
   }}>
     <div className="form-grid">
-      <label className="field">Тип<select name="direction" defaultValue={entry?.direction ?? "in"}><option value="in">Пополнение</option><option value="out">Списание</option></select></label>
-      <label className="field">Сумма, ₽<MoneyField name="amount" value={entry ? moneyText(entry.amount) : undefined}/></label>
+      <label className="field">Тип<select name="direction" value={direction} onChange={e => setDirection(e.target.value === "out" ? "out" : "in")}>
+        <option value="in">Пополнение</option><option value="out">Списание</option></select></label>
+      <label className="field">Сумма, ₽<input inputMode="decimal" required maxLength={18} value={amountInput}
+        onChange={e => { setAmount(e.target.value); setError(""); }}/></label>
       <label className="field wide">Описание<input name="name" defaultValue={entry?.name} placeholder="Например, начальный остаток" required maxLength={120}/></label>
       <label className="field">Дата<input type="date" name="date" defaultValue={entry?.date ?? today()} required/></label>
     </div>
+    <fieldset className="form-shares">
+      <legend>Доли партнёров</legend>
+      <label className="manual-choice"><input type="checkbox" checked={assigned}
+        onChange={e => { setAssigned(e.target.checked); setError(""); }}/> {direction === "in" ? "Указать, кто внёс деньги" : "Отнести списание на партнёров"}</label>
+      {assigned && <div className="cash-share-fields">{partners.map(person => <label key={person.id} className="field">
+        {person.name}, ₽<input inputMode="decimal" maxLength={18} value={draft.get(person.id) ?? ""} placeholder="0"
+          onChange={e => { setDraft(new Map(draft).set(person.id, e.target.value)); setError(""); }}/>
+      </label>)}</div>}
+      {assigned && difference !== null && <p className={"share-help" + (difference < 0 ? " negative" : "")} aria-live="polite">
+        {difference < 0 ? "На " + rub(-difference) + " больше суммы операции." : "Без распределения · " + rub(difference)}
+      </p>}
+      <p className="share-help">Укажите известные суммы. Остаток можно распределить позже.</p>
+    </fieldset>
     {onDelete && <button className="button secondary remove-entry" type="button" onClick={onDelete} disabled={busy}><Trash2 size={16}/>Удалить движение</button>}
     <FormFooter error={error} busy={busy} onCancel={onCancel}/>
   </form>;
@@ -1181,15 +1234,19 @@ function PartForm({ part, error, setError, busy, onCancel, onSave }: FormProps &
     const values = new FormData(event.currentTarget);
     const name = String(values.get("name")).trim();
     const link = String(values.get("link") ?? "").trim();
+    const priceInput = String(values.get("plannedPrice") ?? "").trim();
+    const plannedPrice = priceInput ? parseMoney(priceInput) : undefined;
     if (!name) { setError("Укажите название запчасти."); return; }
+    if (plannedPrice !== undefined && !range(plannedPrice, 1, 100_000_000_000)) { setError("Укажите положительную плановую цену."); return; }
     if (link && !/^https?:\/\//i.test(link)) { setError("Вставьте ссылку, начинающуюся с https:// или http://."); return; }
     void onSave({ id:part?.id ?? crypto.randomUUID(), name, article:String(values.get("article") ?? "").trim() || undefined,
-      link:link || undefined, acquired:part?.acquired ?? false });
+      link:link || undefined, acquired:part?.acquired ?? false, plannedPrice, expenseId:part?.expenseId });
   }}>
     <div className="form-grid">
       <label className="field wide">Запчасть<input name="name" maxLength={140} defaultValue={part?.name} placeholder="Например, передняя левая фара" required/></label>
       <label className="field">Артикул<input name="article" maxLength={120} defaultValue={part?.article}/></label>
-      <label className="field">Ссылка на объявление<input name="link" type="url" maxLength={400} defaultValue={part?.link} placeholder="https://"/></label>
+      <label className="field">Плановая цена, ₽<MoneyField name="plannedPrice" value={part?.plannedPrice ? moneyText(part.plannedPrice) : undefined} required={false}/></label>
+      <label className="field wide">Ссылка на объявление<input name="link" type="url" maxLength={400} defaultValue={part?.link} placeholder="https://"/></label>
     </div>
     <FormFooter error={error} busy={busy} onCancel={onCancel}/>
   </form>;
@@ -1204,14 +1261,16 @@ type VoiceInput = {
   abort(): void;
 };
 
-function PartListForm({ error, setError, busy, onCancel, onSave }: FormProps & {
-  setError: (error: string) => void; onSave: (names: string[]) => Promise<void>;
+function PartListForm({ error, setError, busy, onCancel, onSave, replaceable }: FormProps & {
+  replaceable: number; setError: (error: string) => void; onSave: (parts: PartDraft[], replaceUnpurchased: boolean) => Promise<void>;
 }) {
   const [value, setValue] = useState("");
+  const [replaceUnpurchased, setReplaceUnpurchased] = useState(false);
   const [canDictate, setCanDictate] = useState(false);
   const [listening, setListening] = useState(false);
   const voice = useRef<VoiceInput | null>(null);
-  const names = parsePartList(value);
+  const { parts, errors } = parsePartList(value);
+  const plannedTotal = parts.reduce((sum, part) => sum + (part.plannedPrice ?? 0), 0);
   useEffect(() => {
     const browser = window as Window & { SpeechRecognition?: new () => VoiceInput; webkitSpeechRecognition?: new () => VoiceInput };
     const Recognizer = browser.SpeechRecognition ?? browser.webkitSpeechRecognition;
@@ -1221,7 +1280,10 @@ function PartListForm({ error, setError, busy, onCancel, onSave }: FormProps & {
     engine.lang = "ru-RU";
     engine.onresult = event => {
       const transcript = Array.from(event.results).map(result => result[0]?.transcript).filter(Boolean).join(" ").trim();
-      if (transcript) setValue(current => current ? current + "\n" + transcript : transcript);
+      if (transcript) {
+        const lines = parsePartList(transcript).parts.map(part => part.name).join("\n");
+        setValue(current => current ? current + "\n" + lines : lines);
+      }
     };
     engine.onend = () => setListening(false);
     engine.onerror = () => {
@@ -1245,18 +1307,25 @@ function PartListForm({ error, setError, busy, onCancel, onSave }: FormProps & {
 
   return <form onSubmit={event => {
     event.preventDefault();
-    if (!names.length) { setError("Введите хотя бы одну запчасть."); return; }
-    if (names.some(name => name.length > 140)) { setError("Разделите длинные позиции запятыми или переносами строк."); return; }
-    void onSave(names);
+    if (errors.length) { setError("Проверьте название, артикул и цену в строках " + errors.join(", ") + "."); return; }
+    if (!parts.length) { setError("Введите хотя бы одну запчасть."); return; }
+    if (parts.some(part => part.name.length > 140)) { setError("Сократите названия запчастей до 140 символов."); return; }
+    void onSave(parts, replaceUnpurchased);
   }}>
-    <label className="field">Запчасти<textarea value={value} onChange={event => setValue(event.target.value)} rows={5} maxLength={4000}
+    <label className="field">Запчасти<textarea value={value} onChange={event => { setValue(event.target.value); setError(""); }} rows={5} maxLength={40000}
       placeholder={"Передний бампер\nЛевая фара\nПередние колодки"} required/></label>
-    <p className="prep-help">Перенос строки или запятая разделяет позиции. На телефоне можно использовать диктовку клавиатуры.</p>
+    <p className="prep-help">Вставьте строки из Excel со столбцами «Артикул», «Название», «Цена» или напишите по одной запчасти на строку.</p>
     {canDictate && <button type="button" className="button secondary voice-button" onClick={startVoice} disabled={listening || busy}>
       <Mic size={17}/>{listening ? "Слушаю…" : "Надиктовать"}</button>}
-    {names.length > 0 && <div className="part-preview"><b>Позиции к добавлению · {names.length}</b>
-      <ul>{names.map(name => <li key={name}>{name}</li>)}</ul></div>}
-    <FormFooter error={error} busy={busy || listening} onCancel={onCancel} submit="Добавить позиции"/>
+    {!!parts.length && <div className="part-preview"><b>Позиции к добавлению · {parts.length}</b>
+      <ul>{parts.map((part, index) => <li key={index}>
+        {part.article && <span>{part.article} · </span>}{part.name}{part.plannedPrice ? " · " + rub(part.plannedPrice) : ""}
+      </li>)}</ul>
+      {plannedTotal > 0 && <p className="part-preview-total">По указанным ценам · <b>{rub(plannedTotal)}</b></p>}
+    </div>}
+    {replaceable > 0 && <label className="option-check"><input type="checkbox" checked={replaceUnpurchased}
+      onChange={event => setReplaceUnpurchased(event.target.checked)}/>Заменить старые позиции без покупки и расхода ({replaceable})</label>}
+    <FormFooter error={error} busy={busy || listening} onCancel={onCancel} submit={replaceUnpurchased ? "Заменить позиции" : "Добавить позиции"}/>
   </form>;
 }
 
